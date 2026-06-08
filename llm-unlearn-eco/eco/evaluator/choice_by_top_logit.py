@@ -1,21 +1,55 @@
 import torch
 
 
+def _get_context_window(model, tokenizer):
+    candidates = []
+    model_obj = getattr(model, "model", model)
+    config = getattr(model_obj, "config", None)
+    for attr in ["max_position_embeddings", "n_positions", "max_sequence_length"]:
+        value = getattr(config, attr, None)
+        if isinstance(value, int) and 0 < value < 1_000_000:
+            candidates.append(value)
+
+    tokenizer_max_length = getattr(tokenizer, "model_max_length", None)
+    if (
+        isinstance(tokenizer_max_length, int)
+        and 0 < tokenizer_max_length < 1_000_000
+    ):
+        candidates.append(tokenizer_max_length)
+
+    return min(candidates) if candidates else None
+
+
 class ChoiceByTopLogit:
     name = "choice_by_top_logit"
 
-    def __init__(self, save_logits=False):
+    def __init__(self, save_logits=False, truncation_side="left"):
         super().__init__()
         self.save_logits = save_logits
         self.logits = []
+        self.truncation_side = truncation_side
 
     def evaluate(self, prompts, answers, model, tokenizer):
         padding_side = tokenizer.padding_side
 
         inputs = prompts
-        prompt_encoding = tokenizer(inputs, padding="longest", return_tensors="pt").to(
-            model.device
-        )
+        context_window = _get_context_window(model, tokenizer)
+        tokenizer_kwargs = {
+            "padding": "longest",
+            "return_tensors": "pt",
+        }
+        if context_window is not None:
+            tokenizer_kwargs.update({"truncation": True, "max_length": context_window})
+
+        original_truncation_side = getattr(tokenizer, "truncation_side", None)
+        if original_truncation_side is not None:
+            tokenizer.truncation_side = self.truncation_side
+        try:
+            prompt_encoding = tokenizer(inputs, **tokenizer_kwargs).to(model.device)
+        finally:
+            if original_truncation_side is not None:
+                tokenizer.truncation_side = original_truncation_side
+
         choice_encoding = (
             tokenizer(answers[0], return_tensors="pt", add_special_tokens=False)
             .input_ids.to(model.device)
