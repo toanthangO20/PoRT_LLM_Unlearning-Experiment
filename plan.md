@@ -86,7 +86,7 @@ Kết quả:
 
 ### Bước 2: Chuẩn hóa script pipeline `evaluate_wmdp.py`
 
-Trạng thái: **Đã triển khai, cần chạy Kaggle mini với target model để xác nhận runtime GPU**.
+Trạng thái: **Đã pass Kaggle mini với target model**.
 
 Mục tiêu:
 
@@ -122,9 +122,16 @@ Kết quả local hiện tại:
 - Output chuẩn gồm `run_config.json`, `summary.json`, `summary_by_run.csv`, `summary_overall.csv`, `predictions.csv`, partial artifacts, và `attack_stats.csv` cho corrupt runs.
 - Local smoke bằng `tiny-gpt2`, `sample_size=1` đã pass cho original và `zero_out_first_n --attack_all_prompts`, mỗi run ghi đủ `3` prediction rows.
 
+Kết quả Kaggle target-model mini:
+
+- Notebook `notebooks/smoke_tests/07_kaggle_wmdp_pipeline_script_mini_gpu.ipynb` đã pass trên commit `f0196e944244c067612e64f818bcd6e9dff50964`.
+- Original no-corrupt script run: `6` rows; overall acc `0.166667`; bio `0.5`, chem `0.0`, cyber `0.0`.
+- Corrupt-hook `zero_out_first_n --attack_all_prompts`: `6` rows; overall acc `0.333333`; bio `0.5`, chem `0.0`, cyber `0.5`.
+- Cả hai run đều ghi `run_config.json`, `summary.json`, `summary_by_run.csv`, `predictions.csv`.
+
 ### Bước 3: Tạo notebook/script-level smoke test cho pipeline canonical
 
-Trạng thái: **Đã tạo notebook, chưa chạy trên Kaggle**.
+Trạng thái: **Đã pass trên Kaggle**.
 
 Notebook đề xuất:
 
@@ -269,6 +276,8 @@ Tài liệu cần tạo sau full runs:
 
 ## Next immediate action
 
-Chạy notebook script-level mini test trên Kaggle để xác nhận canonical entrypoint với target model:
+Chuẩn bị classifier-gated PoRT mini run:
 
-`notebooks/smoke_tests/07_kaggle_wmdp_pipeline_script_mini_gpu.ipynb`
+- Cung cấp hoặc mount classifier artifact trên Kaggle.
+- Set `WMDP_CLASSIFIER_PATH=/kaggle/input/...`.
+- Chạy script canonical với `multiple_choice_zero_out.yaml`, `sample_size=2`, không bật `--attack_all_prompts`, để xác nhận classifier load được và `attack_stats.csv` có `num_prompts`, `num_attacked`, `attack_rate`.
