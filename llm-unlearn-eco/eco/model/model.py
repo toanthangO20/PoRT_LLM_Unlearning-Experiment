@@ -9,6 +9,24 @@ from transformers import (
 from eco.utils import load_yaml
 
 
+def _resolve_torch_dtype(dtype_name):
+    if dtype_name is None:
+        return torch.float16 if torch.cuda.is_available() else torch.float32
+    if dtype_name == "auto":
+        return "auto"
+    dtype_map = {
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+        "float32": torch.float32,
+        "fp32": torch.float32,
+    }
+    if dtype_name not in dtype_map:
+        raise ValueError(f"Unsupported torch_dtype in model config: {dtype_name}")
+    return dtype_map[dtype_name]
+
+
 class HFModel:
     def __init__(
         self,
@@ -19,20 +37,22 @@ class HFModel:
     ):
         self.model_name = model_name
         self.model_config = load_yaml(f"{config_path}/{model_name}.yaml")
+        load_in_4bit = self.model_config.get("load_in_4bit", False)
+        load_in_8bit = self.model_config.get("load_in_8bit", False)
         quantization_config = (
             BitsAndBytesConfig(
-                load_in_4bit=self.model_config["load_in_4bit"],
-                load_in_8bit=self.model_config["load_in_8bit"],
+                load_in_4bit=load_in_4bit,
+                load_in_8bit=load_in_8bit,
             )
-            if self.model_config["load_in_4bit"] or self.model_config["load_in_8bit"]
+            if load_in_4bit or load_in_8bit
             else None
         )
         model_args = {
-            "torch_dtype": torch.bfloat16,
-            "attn_implementation": self.model_config["attn_implementation"],
+            "torch_dtype": _resolve_torch_dtype(self.model_config.get("torch_dtype")),
             "device_map": "auto",
             "quantization_config": quantization_config,
-            "trust_remote_code": (
+            "trust_remote_code": self.model_config.get(
+                "trust_remote_code",
                 False
                 if "c4ai-command-r-v01" in model_name.lower()
                 or "falcon" in model_name.lower()
@@ -40,16 +60,18 @@ class HFModel:
                 else True
             ),
         }
+        if self.model_config.get("attn_implementation"):
+            model_args["attn_implementation"] = self.model_config["attn_implementation"]
 
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_path if model_path else self.model_config["hf_name"], **model_args
-        )
+        model_source = model_path if model_path else self.model_config["hf_name"]
+        self.model = AutoModelForCausalLM.from_pretrained(model_source, **model_args)
 
         num_parameters = sum(p.numel() for p in self.model.parameters())
         print(f"Number of parameters: {num_parameters}")
 
         tokenizer_args = {
-            "trust_remote_code": (
+            "trust_remote_code": self.model_config.get(
+                "trust_remote_code",
                 False
                 if "c4ai-command-r-v01" in model_name.lower()
                 or "falcon" in model_name.lower()
@@ -60,7 +82,7 @@ class HFModel:
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             (
-                self.model_config["hf_name"]
+                model_source
                 if "openelm" not in model_name.lower()
                 else "meta-llama/Llama-2-7b-hf"
             ),
@@ -72,7 +94,11 @@ class HFModel:
             if generation_config is None
             else generation_config
         )
-        self.device = self.model.device
+        self.device = (
+            self.model.device
+            if hasattr(self.model, "device")
+            else next(self.model.parameters()).device
+        )
         self.generation_config = self.model.generation_config
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token

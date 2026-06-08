@@ -1,0 +1,13 @@
+embedding_dim: 2
+attack_module: transformer.wte
+formatting_tokens:
+  answer_prefix: ""
+  answer_suffix: ""
+  prompt_prefix: ""
+  prompt_suffix: ""
+hf_name: sshleifer/tiny-gpt2
+attn_implementation: eager
+torch_dtype: float32
+trust_remote_code: false
+load_in_8bit: false
+load_in_4bit: false
