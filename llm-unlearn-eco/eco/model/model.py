@@ -1,5 +1,6 @@
 import torch
 from transformers import (
+    AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
@@ -64,6 +65,13 @@ class HFModel:
             model_args["attn_implementation"] = self.model_config["attn_implementation"]
 
         model_source = model_path if model_path else self.model_config["hf_name"]
+        hf_config = AutoConfig.from_pretrained(
+            model_source,
+            trust_remote_code=model_args["trust_remote_code"],
+        )
+        if not hasattr(hf_config, "pad_token_id"):
+            hf_config.pad_token_id = getattr(hf_config, "eos_token_id", None)
+        model_args["config"] = hf_config
         self.model = AutoModelForCausalLM.from_pretrained(model_source, **model_args)
 
         num_parameters = sum(p.numel() for p in self.model.parameters())
