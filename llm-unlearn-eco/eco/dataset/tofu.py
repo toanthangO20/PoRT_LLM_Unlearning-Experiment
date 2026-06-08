@@ -3,10 +3,11 @@ import os
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
 
 from eco.dataset.base import BaseDataset
+from eco.paths import TOFU_DATASET_DIR
 
 class TOFU(BaseDataset):
     dataset_type = "qa"
-    path = "<TOFU_DATASET_PATH>"  # Local path placeholder
+    path = str(TOFU_DATASET_DIR)
     name = "tofu"
     subsets = [
         "retain90",

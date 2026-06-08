@@ -2,7 +2,6 @@ import argparse
 import json
 import os
 import torch
-import yaml
 from datasets import Dataset
 from datasets.utils.logging import disable_progress_bar
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -10,6 +9,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from eco.evaluator import ChoiceByTopLogit, ChoiceByTopProb, NormalizedAnswerProb
 from eco.inference import EvaluationEngine
 from eco.model import HFModel
+from eco.paths import MODEL_CONFIG_DIR, RESULTS_DIR
 from eco.utils import (
     create_tasks_table,
     delete_model,
@@ -32,17 +32,18 @@ def patch_hf_model():
         if not os.path.exists(config_file):
             raise FileNotFoundError(f"Config file not found: {config_file}")
         config = load_yaml(config_file)
-        actual_model_path = config["model_name"]
+        actual_model_path = config.get("model_name", config.get("hf_name"))
+        local_files_only = os.path.exists(actual_model_path)
         self.model = AutoModelForCausalLM.from_pretrained(
             actual_model_path,
             torch_dtype=torch.float16,
             device_map="auto",
-            local_files_only=True,
+            local_files_only=local_files_only,
             trust_remote_code=True,
         )
         self.tokenizer = AutoTokenizer.from_pretrained(
             actual_model_path,
-            local_files_only=True,
+            local_files_only=local_files_only,
             trust_remote_code=True,
         )
         if self.tokenizer.pad_token is None:
@@ -69,7 +70,7 @@ if __name__ == "__main__":
     parser.add_argument("--subset_name", type=str, required=True, choices=["economics", "physics", "law"])
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--classifier_threshold", type=float, default=None)
-    parser.add_argument("--task_config", type=str, default="<TASK_CONFIG_PATH>")
+    parser.add_argument("--task_config", type=str, required=True)
     parser.add_argument("--use_prefix", action="store_true")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--mmlu_local_path", type=str, required=True, help="Local MMLU dataset path (csv/parquet/arrow)")
@@ -89,7 +90,7 @@ if __name__ == "__main__":
         "model_name": args.model_name,
         "batch_size": args.batch_size,
         "classifier_threshold": args.classifier_threshold,
-        "embedding_dim": load_yaml(f"<MODEL_CONFIG_DIR>/{args.model_name}.yaml")[
+        "embedding_dim": load_yaml(f"{MODEL_CONFIG_DIR}/{args.model_name}.yaml")[
             "embedding_dim"
         ],
     }
@@ -149,7 +150,7 @@ if __name__ == "__main__":
         corrupt_args = task_params.get("corrupt_args", None)
         summaries, outputs = [], []
 
-        model = HFModel(model_name=setup["model_name"], config_path="<MODEL_CONFIG_DIR>")
+        model = HFModel(model_name=setup["model_name"], config_path=str(MODEL_CONFIG_DIR))
 
         evaluation_engines = [
             EvaluationEngine(
@@ -230,7 +231,7 @@ if __name__ == "__main__":
         if args.use_prefix:
             run_name += "_prefix"
 
-        results_subdir = f"<RESULTS_DIR>/mmlu_{setup['model_name']}_{args.subset_name}"
+        results_subdir = f"{RESULTS_DIR}/mmlu_{setup['model_name']}_{args.subset_name}"
         if not os.path.exists(results_subdir):
             os.makedirs(results_subdir)
         with open(f"{results_subdir}/{run_name}_summary.json", "w") as f:
@@ -246,7 +247,7 @@ if __name__ == "__main__":
 
     print("\nAll tasks completed!")
 
-    results_root = f"<RESULTS_DIR>/mmlu_{setup['model_name']}_{args.subset_name}"
+    results_root = f"{RESULTS_DIR}/mmlu_{setup['model_name']}_{args.subset_name}"
     if not os.path.exists(results_root):
         os.makedirs(results_root)
     if all_summaries:

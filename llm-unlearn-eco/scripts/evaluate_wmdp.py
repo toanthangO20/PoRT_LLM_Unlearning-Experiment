@@ -2,30 +2,14 @@ import argparse
 import json
 import os
 import torch
-import yaml
-from datasets import load_from_disk
 from datasets.utils.logging import disable_progress_bar
 
 from eco.attack import AttackedModel, PromptClassifier
-from eco.dataset import (
-    MMLU,
-    PIQA,
-    ARCChallenge,
-    ARCEasy,
-    BoolQ,
-    CommonsenseQA,
-    HellaSwag,
-    OpenBookQA,
-    SocialIQA,
-    TruthfulQA,
-    Winogrande,
-    WMDPBio,
-    WMDPChem,
-    WMDPCyber,
-)
+from eco.dataset import MMLU, WMDPBio, WMDPChem, WMDPCyber
 from eco.evaluator import ChoiceByTopLogit, ChoiceByTopProb, NormalizedAnswerProb
 from eco.inference import EvaluationEngine
 from eco.model import HFModel
+from eco.paths import MODEL_CONFIG_DIR, RESULTS_DIR, TASK_CONFIG_DIR, WMDP_DATASET_DIR
 from eco.utils import (
     create_tasks_table,
     delete_model,
@@ -57,19 +41,24 @@ def patch_hf_model():
             raise FileNotFoundError(f"Config file not found: {config_file}")
 
         config = load_yaml(config_file)
-        actual_model_path = global_args.model_path if global_args and global_args.model_path else config["model_name"]
+        actual_model_path = (
+            global_args.model_path
+            if global_args and global_args.model_path
+            else config.get("model_name", config.get("hf_name"))
+        )
+        local_files_only = os.path.exists(actual_model_path)
 
         self.model = AutoModelForCausalLM.from_pretrained(
             actual_model_path,
             torch_dtype=torch.float16,
             device_map="auto",
-            local_files_only=True,
+            local_files_only=local_files_only,
             trust_remote_code=True,
         )
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             actual_model_path,
-            local_files_only=True,
+            local_files_only=local_files_only,
             trust_remote_code=True,
         )
 
@@ -111,6 +100,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_prefix", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--save_logits", action="store_true")
+    parser.add_argument("--sample_size", type=int, default=None)
 
     args = parser.parse_args()
     global_args = args
@@ -122,11 +112,11 @@ if __name__ == "__main__":
         "model_name": args.model_name,
         "batch_size": args.batch_size,
         "classifier_threshold": args.classifier_threshold,
-        "embedding_dim": load_yaml(f"<MODEL_CONFIG_DIR>/{args.model_name}.yaml")[
+        "embedding_dim": load_yaml(f"{MODEL_CONFIG_DIR}/{args.model_name}.yaml")[
             "embedding_dim"
         ],
     }
-    default_config = "<TASK_CONFIG_DEFAULT>"
+    default_config = str(TASK_CONFIG_DIR / "multiple_choice_original.yaml")
     config = load_yaml_with_interpolation(
         args.task_config if args.task_config is not None else default_config, **setup
     )
@@ -136,9 +126,18 @@ if __name__ == "__main__":
     all_summaries = []
 
     data_modules = {
-        "wmdp-bio": WMDPBio(parquet_path="<WMDP_BIO_PARQUET_PATH>"),
-        "wmdp-chem": WMDPChem(parquet_path="<WMDP_CHEM_PARQUET_PATH>"),
-        "wmdp-cyber": WMDPCyber(parquet_path="<WMDP_CYBER_PARQUET_PATH>"),
+        "wmdp-bio": WMDPBio(
+            parquet_path=WMDP_DATASET_DIR / "wmdp-bio" / "test-00000-of-00001.parquet",
+            sample_size=args.sample_size,
+        ),
+        "wmdp-chem": WMDPChem(
+            parquet_path=WMDP_DATASET_DIR / "wmdp-chem" / "test-00000-of-00001.parquet",
+            sample_size=args.sample_size,
+        ),
+        "wmdp-cyber": WMDPCyber(
+            parquet_path=WMDP_DATASET_DIR / "wmdp-cyber" / "test-00000-of-00001.parquet",
+            sample_size=args.sample_size,
+        ),
         "mmlu": MMLU(),
     }
     
@@ -175,10 +174,12 @@ if __name__ == "__main__":
         corrupt_args = task_params.get("corrupt_args", None)
         summaries, outputs = [], []
 
-        model = HFModel(model_name=setup["model_name"], config_path="<MODEL_CONFIG_DIR>")
+        model = HFModel(model_name=setup["model_name"], config_path=str(MODEL_CONFIG_DIR))
 
         if corrupt_method is not None:
-            wmdp_classifier_path = "<WMDP_CLASSIFIER_PATH>"
+            wmdp_classifier_path = os.environ.get("WMDP_CLASSIFIER_PATH")
+            if not wmdp_classifier_path:
+                raise ValueError("WMDP_CLASSIFIER_PATH must be set when corrupt_method is enabled")
             prompt_classifier = PromptClassifier(
                 model_name="wmdp_classifier_llama_guard_3_1b_v2",
                 model_path=wmdp_classifier_path,
@@ -228,7 +229,7 @@ if __name__ == "__main__":
         if args.use_prefix:
             run_name += "_prefix"
 
-        results_subdir = f"<RESULTS_DIR>/wmdp_{setup['model_name']}"
+        results_subdir = f"{RESULTS_DIR}/wmdp_{setup['model_name']}"
         if not os.path.exists(results_subdir):
             os.makedirs(results_subdir)
         with open(f"{results_subdir}/{run_name}_summary.json", "w") as f:
@@ -260,7 +261,7 @@ if __name__ == "__main__":
         if corrupt_method is not None:
             delete_model(prompt_classifier)
 
-    results_root = f"<RESULTS_DIR>/wmdp_{setup['model_name']}"
+    results_root = f"{RESULTS_DIR}/wmdp_{setup['model_name']}"
     if not os.path.exists(results_root):
         os.makedirs(results_root)
     if all_summaries:

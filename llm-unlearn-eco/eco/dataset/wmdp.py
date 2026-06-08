@@ -1,205 +1,93 @@
-import json
-import os
-from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
+import ast
+import re
+from pathlib import Path
+
+from datasets import Dataset, DatasetDict, load_from_disk
 
 from eco.dataset.base import BaseDataset
+from eco.paths import WMDP_DATASET_DIR
 
-class TOFU(BaseDataset):
-    dataset_type = "qa"
-    path = "<TOFU_DATASET_PATH>"  # Local path placeholder
-    name = "tofu"
-    subsets = [
-        "retain90",
-        "retain95", 
-        "retain99",
-        "forget01",
-        "forget05",
-        "forget10",
-        "real_authors",
-        "world_facts",
-    ]
-    match_retain = {
-        "forget01": "retain99",
-        "forget05": "retain95",
-        "forget10": "retain90",
-    }
-    keys = ["prompt", "answer", "prompt_formatted"]
-    eval_prompt_key = "prompt_formatted"
-    eval_answer_key = "answer"
-    gen_prompt_key = "prompt_formatted"
-    gen_answer_key = "answer"
-    eval_dataset_keys = ["retain", "forget", "test"]
 
-    def __init__(self, tokenizer=None, formatting_tokens=None, eos_token=None, *args, **kwargs):
-        super().__init__()
-        self.tokenizer = tokenizer
-        self.formatting_tokens = formatting_tokens
-        self.eos_token = eos_token if eos_token is not None else ""
-        for k in [
-            "prompt_prefix",
-            "prompt_suffix", 
-            "answer_prefix",
-            "answer_suffix",
-        ]:
-            if formatting_tokens is not None and isinstance(formatting_tokens, dict) and k in formatting_tokens:
-                setattr(self, k, formatting_tokens[k])
-            else:
-                setattr(self, k, "")
-
-    def load_local_json(self, subset_name):
-        # Load data from local JSON file
-        file_path = os.path.join(self.path, f"{subset_name}.json")
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            if isinstance(data, list) and len(data) > 0:
-                if isinstance(data[0], dict) and 'question' in data[0] and 'answer' in data[0]:
-                    dataset = Dataset.from_list(data)
-                    print(f"Loaded {subset_name}: {len(data)} samples")
-                    return dataset
-                else:
-                    raise ValueError(f"Incorrect data format: {subset_name}")
-            else:
-                raise ValueError(f"Empty or invalid data: {subset_name}")
-        except Exception as e:
-            print(f"Failed to load {subset_name}: {e}")
-            raise
-
-    def download(self):
-        # Load all dataset subsets
-        print(f"Loading TOFU dataset from local path: {self.path}")
-        data_subsets = {}
-        for subset_name in self.subsets:
-            try:
-                dataset = self.load_local_json(subset_name)
-                data_subsets[subset_name] = dataset
-            except Exception as e:
-                print(f"Skip subset {subset_name}: {e}")
-                data_subsets[subset_name] = Dataset.from_list([])
-        self.dataset = DatasetDict(data_subsets)
-        print(f"TOFU dataset loaded, {len(data_subsets)} subsets")
-        for name, dataset in data_subsets.items():
-            print(f"   {name}: {len(dataset)} samples")
-
-    def get_subset(self, subset_name):
-        # Safely get dataset subset
-        if self.dataset is None:
-            self.download()
-        if subset_name not in self.dataset:
-            print(f"Subset '{subset_name}' not found, available: {list(self.dataset.keys())}")
-            return Dataset.from_list([])
-        return self.dataset[subset_name]
-
-    def load_dataset_for_eval(
-        self, split_name, load_in_batch=False, batch_size=64, prompt_prefix=""
-    ):
-        if self.dataset is None:
-            self.download()
-        if split_name not in self.dataset:
-            print(f"Eval split '{split_name}' not found")
-            return Dataset.from_list([])
-        dataset = self.dataset[split_name]
-        if len(dataset) == 0:
-            print(f"Eval split '{split_name}' is empty")
-            return dataset
-        dataset = dataset.rename_column("question", "prompt")
-        dataset = dataset.map(
-            lambda x: {
-                "prompt_formatted": f"{self.prompt_prefix}{x['prompt']}{self.prompt_suffix}",
-                "answer": self.answer_prefix + x["answer"] + self.eos_token,
-            }
-        )
-        dataset = dataset.map(
-            lambda x: {"prompt_formatted": prompt_prefix + x["prompt_formatted"]}
-        )
-        return self.batchify(dataset, batch_size) if load_in_batch else dataset
-
-    def load_dataset_for_classification(self, split_name, use_val=False):
-        if self.dataset is None:
-            self.download()
-        assert (
-            split_name in self.subsets and split_name in self.match_retain
-        ), f"Invalid split name: {split_name}"
-        retain_set_name = self.match_retain[split_name]
-        forget_set_name = split_name
-
-        retain_dataset = self.get_subset(retain_set_name)
-        forget_dataset = self.get_subset(forget_set_name)
-        real_authors_dataset = self.get_subset("real_authors")
-        world_facts_dataset = self.get_subset("world_facts")
-
-        if len(retain_dataset) == 0 or len(forget_dataset) == 0:
-            print(f"Empty dataset: retain={len(retain_dataset)}, forget={len(forget_dataset)}")
-
-        retain_dataset, forget_dataset, real_authors_dataset, world_facts_dataset = map(
-            lambda x: x.rename_column("question", "text").remove_columns("answer") if len(x) > 0 else x,
-            [retain_dataset, forget_dataset, real_authors_dataset, world_facts_dataset],
-        )
-
-        retain_dataset = retain_dataset.map(lambda x: {"label": 0}) if len(retain_dataset) > 0 else retain_dataset
-        forget_dataset = forget_dataset.map(lambda x: {"label": 1}) if len(forget_dataset) > 0 else forget_dataset
-        
-        train_dataset = Dataset.from_dict(
-            {
-                "text": retain_dataset["text"] + forget_dataset["text"],
-                "label": retain_dataset["label"] + forget_dataset["label"],
-            }
-        ) if len(retain_dataset) > 0 and len(forget_dataset) > 0 else Dataset.from_list([])
-        
-        val_dataset = Dataset.from_list([])
-        if use_val and len(train_dataset) > 0:
-            train_dataset = train_dataset.train_test_split(test_size=0.1, seed=42)
-            train_dataset, val_dataset = train_dataset["train"], train_dataset["test"]
-            
-        real_authors_dataset = real_authors_dataset.map(lambda x: {"label": 0}) if len(real_authors_dataset) > 0 else real_authors_dataset
-        world_facts_dataset = world_facts_dataset.map(lambda x: {"label": 0}) if len(world_facts_dataset) > 0 else world_facts_dataset
-
-        general_dataset = concatenate_datasets(
-            [real_authors_dataset, world_facts_dataset]
-        ) if len(real_authors_dataset) > 0 and len(world_facts_dataset) > 0 else Dataset.from_list([])
-
-        return DatasetDict(
-            {
-                "train": train_dataset,
-                "valid": val_dataset,
-                "retain": retain_dataset,
-                "forget": forget_dataset,
-                "test": general_dataset,
-            }
-        )
-
-class TOFUPerturbed(TOFU):
-    name = "tofu-perturbed"
-    subsets = [
-        "retain_perturbed",
-        "forget01_perturbed",
-        "forget05_perturbed", 
-        "forget10_perturbed",
-        "real_authors_perturbed",
-        "world_facts_perturbed",
-    ]
-    keys = ["prompt", "answer", "perturbed_answer", "prompt_formatted", "choices"]
-    eval_prompt_key = "prompt_formatted"
+class WMDP(BaseDataset):
+    dataset_type = "multiple_choice"
+    path = str(WMDP_DATASET_DIR)
+    name = "wmdp"
+    subject = None
+    subsets = ["test"]
+    test_set = "test"
+    choice_labels = ["A", "B", "C", "D"]
+    eval_method = "choice_by_top_logit"
+    metric = "accuracy"
+    keys = ["prompt", "choices", "correct_answer"]
+    eval_prompt_key = "prompt"
     eval_answer_key = "choices"
 
-    def __init__(self, formatting_tokens, eos_token):
-        super().__init__(formatting_tokens, eos_token)
+    def __init__(self, parquet_path=None, dataset_path=None, sample_size=None):
+        super().__init__()
+        self.parquet_path = Path(parquet_path) if parquet_path else None
+        self.dataset_path = Path(dataset_path) if dataset_path else None
+        self.sample_size = sample_size
+
+    def _default_parquet_path(self):
+        if self.subject is None:
+            raise ValueError("subject must be set or parquet_path must be provided")
+        return Path(self.path) / f"wmdp-{self.subject}" / "test-00000-of-00001.parquet"
 
     def download(self):
-        # Download method for TOFUPerturbed
-        print(f"Loading TOFUPerturbed dataset")
-        data_subsets = {}
-        for subset_name in self.subsets:
+        if self.dataset_path is not None:
+            dataset = load_from_disk(str(self.dataset_path))
+            if isinstance(dataset, DatasetDict):
+                self.dataset = dataset
+            else:
+                self.dataset = DatasetDict({"test": dataset})
+            return
+
+        parquet_path = self.parquet_path or self._default_parquet_path()
+        if not parquet_path.exists():
+            raise FileNotFoundError(f"WMDP parquet file not found: {parquet_path}")
+
+        dataset = Dataset.from_parquet(str(parquet_path))
+        if self.sample_size is not None:
+            dataset = dataset.select(range(min(self.sample_size, len(dataset))))
+        self.dataset = DatasetDict({"test": dataset})
+
+    @classmethod
+    def normalize_choices(cls, choices):
+        if choices is None:
+            raise ValueError("WMDP choices cannot be None")
+
+        if hasattr(choices, "tolist"):
+            choices = choices.tolist()
+
+        if isinstance(choices, tuple):
+            choices = list(choices)
+
+        if isinstance(choices, list):
+            if len(choices) == 1 and isinstance(choices[0], (list, tuple)):
+                choices = list(choices[0])
+            return [str(choice).strip() for choice in choices]
+
+        if isinstance(choices, str):
+            text = choices.strip()
             try:
-                dataset = self.load_local_json(subset_name)
-                data_subsets[subset_name] = dataset
-            except Exception as e:
-                print(f"TOFUPerturbed subset {subset_name} failed: {e}")
-                data_subsets[subset_name] = Dataset.from_list([])
-        self.dataset = DatasetDict(data_subsets)
-        print(f"TOFUPerturbed dataset loaded")
+                parsed = ast.literal_eval(text)
+                if hasattr(parsed, "tolist"):
+                    parsed = parsed.tolist()
+                if isinstance(parsed, (list, tuple)):
+                    return [str(choice).strip() for choice in parsed]
+            except (SyntaxError, ValueError):
+                pass
+
+            quoted = re.findall(r"'([^']*)'|\"([^\"]*)\"", text, flags=re.DOTALL)
+            flattened = [single or double for single, double in quoted]
+            if flattened:
+                return [choice.strip() for choice in flattened]
+
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            if len(lines) > 1:
+                return lines
+
+        raise ValueError(f"Unsupported WMDP choices format: {type(choices)}")
 
     def load_dataset_for_eval(
         self, split_name, load_in_batch=False, batch_size=64, prompt_prefix=""
@@ -207,38 +95,50 @@ class TOFUPerturbed(TOFU):
         if self.dataset is None:
             self.download()
         if split_name not in self.dataset:
-            print(f"TOFUPerturbed eval split '{split_name}' not found")
-            return Dataset.from_list([])
+            raise KeyError(f"WMDP split '{split_name}' not found; available: {list(self.dataset.keys())}")
+
         dataset = self.dataset[split_name]
-        if len(dataset) == 0:
-            print(f"TOFUPerturbed eval split '{split_name}' is empty")
-            return dataset
-        dataset = dataset.rename_column("question", "prompt")
-        answer_key = (
-            "paraphrased_answer"
-            if "paraphrased_answer" in dataset.column_names
-            else "answer"
-        )
         dataset = dataset.map(
             lambda x: {
-                "prompt_formatted": f"{self.prompt_prefix}{x['prompt']}{self.prompt_suffix}",
-                "choices": [self.answer_prefix + x[answer_key] + self.eos_token]
-                + [
-                    f"{self.answer_prefix}{a}{self.eos_token}"
-                    for a in x["perturbed_answer"]
-                ],
-                "answer": self.answer_prefix + x[answer_key] + self.eos_token,
-                "perturbed_answer": [
-                    f"{self.answer_prefix}{a}{self.eos_token}"
-                    for a in x["perturbed_answer"]
-                ],
+                "choice_text": self.normalize_choices(x["choices"]),
+                "correct_answer": int(x["answer"]),
             }
         )
         dataset = dataset.map(
-            lambda x: {"prompt_formatted": prompt_prefix + x["prompt_formatted"]}
+            lambda x: {
+                "prompt": prompt_prefix
+                + self.format_prompt(x["question"], x["choice_text"], self.choice_labels, self.subject),
+                "choices": self.choice_labels,
+            }
         )
-        if "paraphrased_question" in dataset.column_names:
-            dataset = dataset.remove_columns("paraphrased_question")
-        if "paraphrased_answer" in dataset.column_names:
-            dataset = dataset.remove_columns("paraphrased_answer")
+        keep_columns = set(self.keys)
+        remove_columns = [column for column in dataset.column_names if column not in keep_columns]
+        if remove_columns:
+            dataset = dataset.remove_columns(remove_columns)
         return self.batchify(dataset, batch_size) if load_in_batch else dataset
+
+    @staticmethod
+    def format_prompt(prompt, choice_text, choice_label, subject=None):
+        topic = f" about {subject}" if subject else ""
+        topic_line = f"The following are multiple choice questions (with answers){topic}.\n\n"
+        question_line = f"Question:\n{prompt}\n"
+        choice_lines = "\n".join(
+            f"{label}. {text}" for label, text in zip(choice_label, choice_text)
+        )
+        answer_line = "\n\nAnswer:"
+        return topic_line + question_line + choice_lines + answer_line
+
+
+class WMDPBio(WMDP):
+    name = "wmdp-bio"
+    subject = "bio"
+
+
+class WMDPChem(WMDP):
+    name = "wmdp-chem"
+    subject = "chem"
+
+
+class WMDPCyber(WMDP):
+    name = "wmdp-cyber"
+    subject = "cyber"

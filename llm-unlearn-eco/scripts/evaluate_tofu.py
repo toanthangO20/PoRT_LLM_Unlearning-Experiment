@@ -18,6 +18,7 @@ from eco.dataset import TOFU, TOFUPerturbed
 from eco.evaluator import AnswerProb, NormalizedAnswerProb, ROUGERecall, TruthRatio
 from eco.inference import EvaluationEngine, GenerationEngine
 from eco.model import HFModel
+from eco.paths import MODEL_CONFIG_DIR, RESULTS_DIR, TASK_CONFIG_DIR, TOFU_DATASET_DIR
 from eco.utils import (
     create_tasks_table,
     delete_model,
@@ -33,7 +34,7 @@ from eco.utils import (
 disable_progress_bar()
 
 def check_dataset_files():
-    tofu_dir = "<TOFU_DATASET_DIR>"
+    tofu_dir = str(TOFU_DATASET_DIR)
     key_files = [
         "forget01.json", "forget05.json", "forget10.json",
         "retain90.json", "retain95.json", "retain99.json", 
@@ -89,7 +90,7 @@ def safe_get_subset(data_module, subset_name):
                 result = data_module.dataset[subset_name]
                 return result
         try:
-            tofu_dir = "<TOFU_DATASET_DIR>"
+            tofu_dir = str(TOFU_DATASET_DIR)
             file_path = os.path.join(tofu_dir, f"{subset_name}.json")
             if os.path.exists(file_path):
                 with open(file_path, 'r', encoding='utf-8') as f:
@@ -153,7 +154,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--classifier_threshold", type=float, default=0.99)
     parser.add_argument("--optimal_corrupt_dim", type=int, default=500)
-    parser.add_argument("--task_config", type=str, default="<TASK_CONFIG_PATH>")
+    parser.add_argument("--task_config", type=str, default=str(TASK_CONFIG_DIR / "tofu.yaml"))
     parser.add_argument("--use_prefix", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
@@ -172,7 +173,7 @@ def main():
         "model_name": args.model_name,
         "batch_size": args.batch_size,
         "classifier_threshold": args.classifier_threshold,
-        "embedding_dim": load_yaml(f"<MODEL_CONFIG_DIR>/{args.model_name}.yaml")[
+        "embedding_dim": load_yaml(f"{MODEL_CONFIG_DIR}/{args.model_name}.yaml")[
             "embedding_dim"
         ],
         "optimal_corrupt_dim": args.optimal_corrupt_dim,
@@ -202,22 +203,23 @@ def main():
             model = HFModel(
                 model_name=setup["model_name"],
                 model_path=model_path,
-                config_path="<MODEL_CONFIG_DIR>",
+                config_path=str(MODEL_CONFIG_DIR),
             )
 
             tokenizer_path = model_path if model_path else model.model_config["hf_name"]
             tokenizer_json_path = os.path.join(tokenizer_path, "tokenizer.json") if tokenizer_path else None
+            local_files_only = os.path.exists(tokenizer_path) if tokenizer_path else False
             if tokenizer_json_path and os.path.exists(tokenizer_json_path):
                 model.tokenizer = AutoTokenizer.from_pretrained(
                     tokenizer_path,
-                    local_files_only=True,
+                    local_files_only=local_files_only,
                     trust_remote_code=True,
                     tokenizer_file=tokenizer_json_path,
                 )
             else:
                 model.tokenizer = AutoTokenizer.from_pretrained(
                     tokenizer_path,
-                    local_files_only=True,
+                    local_files_only=local_files_only,
                     trust_remote_code=True,
                 )
 
@@ -244,7 +246,12 @@ def main():
             forget_perturbed = safe_get_subset(tofu_perturbed_data_module, f"{setup['forget_set_name']}_perturbed")
 
             if corrupt_method is not None:
-                tofu_classifier_path = "<TOFU_CLASSIFIER_PATH>"
+                tofu_classifier_path = os.environ.get("TOFU_CLASSIFIER_PATH")
+                bert_ner_model_path = os.environ.get("BERT_NER_MODEL_PATH")
+                if not tofu_classifier_path or not bert_ner_model_path:
+                    raise ValueError(
+                        "TOFU_CLASSIFIER_PATH and BERT_NER_MODEL_PATH must be set when corrupt_method is enabled"
+                    )
                 prompt_classifier = PromptClassifier(
                     model_name="roberta-base",
                     model_path=tofu_classifier_path,
@@ -252,7 +259,7 @@ def main():
                 )
                 token_classifier = TokenClassifier(
                     model_name="dslim/bert-base-NER",
-                    model_path="<BERT_NER_MODEL_PATH>",
+                    model_path=bert_ner_model_path,
                     batch_size=setup["batch_size"],
                 )
                 model = AttackedModel(
@@ -356,7 +363,7 @@ def main():
             if args.use_prefix and task_name != "retain":
                 run_name += "_prefix"
 
-            results_root = f"<RESULTS_DIR>/tofu_{model_name}_{setup['forget_set_name']}"
+            results_root = f"{RESULTS_DIR}/tofu_{model_name}_{setup['forget_set_name']}"
             if not os.path.exists(results_root):
                 os.makedirs(results_root)
             
@@ -406,7 +413,7 @@ def main():
         df.insert(0, "name", name_col)
         if len(df) >= 2:
             df.iloc[0], df.iloc[1] = df.iloc[1].copy(), df.iloc[0].copy()
-        summary_dir = f"<RESULTS_DIR>/tofu_{setup['model_name']}_{setup['forget_set_name']}"
+        summary_dir = f"{RESULTS_DIR}/tofu_{setup['model_name']}_{setup['forget_set_name']}"
         if not os.path.exists(summary_dir):
             os.makedirs(summary_dir)
         df.to_csv(
@@ -425,7 +432,7 @@ def main():
         "total_hms": _fmt_hms(total_elapsed),
         "tasks": task_timings
     }
-    summary_dir = f"<RESULTS_DIR>/tofu_{setup['model_name']}_{setup['forget_set_name']}"
+    summary_dir = f"{RESULTS_DIR}/tofu_{setup['model_name']}_{setup['forget_set_name']}"
     os.makedirs(summary_dir, exist_ok=True)
     with open(f"{summary_dir}/runtime_summary.json", "w") as f:
         json.dump(runtime_summary, f, indent=2)

@@ -7,6 +7,8 @@ logging.set_verbosity_error()
 
 class BaseClassifier:
     def __init__(self, model_name, model_path, batch_size):
+        self.model_name = model_name
+        self.model_path = model_path
         actual_model_path = model_path
         self.model = AutoModel.from_pretrained(
             actual_model_path,
@@ -52,10 +54,10 @@ class PromptClassifier(Classifier):
                     tokenizer=self.tokenizer,
                     device=0,
                 )
-                print(f"Using local TOFU classifier: <TOFU_MODEL_PATH>")
+                print(f"Using local TOFU classifier: {model_path}")
             else:
-                print(f"Local TOFU classifier not found at <TOFU_MODEL_PATH>")
-                raise FileNotFoundError(f"TOFU classifier not found: <TOFU_MODEL_PATH>")
+                print(f"Local TOFU classifier not found at {model_path}")
+                raise FileNotFoundError(f"TOFU classifier not found: {model_path}")
         elif "wmdp" in model_name.lower():
             if os.path.exists(model_path):
                 self.model = pipeline(
@@ -64,12 +66,12 @@ class PromptClassifier(Classifier):
                     tokenizer=self.tokenizer,
                     device=0,
                 )
-                print(f"Using local WMDP classifier: <WMDP_MODEL_PATH>")
+                print(f"Using local WMDP classifier: {model_path}")
             else:
-                print(f"Local WMDP classifier not found at <WMDP_MODEL_PATH>")
-                raise FileNotFoundError(f"WMDP classifier not found: <WMDP_MODEL_PATH>")
+                print(f"Local WMDP classifier not found at {model_path}")
+                raise FileNotFoundError(f"WMDP classifier not found: {model_path}")
         else:
-            local_roberta = "<ROBERTA_MODEL_PATH>"
+            local_roberta = os.environ.get("ROBERTA_MODEL_PATH", model_path)
             if os.path.exists(local_roberta):
                 self.model = pipeline(
                     self.task,
@@ -77,7 +79,7 @@ class PromptClassifier(Classifier):
                     tokenizer=self.tokenizer,
                     device=0,
                 )
-                print(f"Using local RoBERTa: <ROBERTA_MODEL_PATH>")
+                print(f"Using local RoBERTa: {local_roberta}")
             else:
                 self.model = pipeline(
                     self.task,
@@ -107,7 +109,7 @@ class TokenClassifier(Classifier):
     def __init__(self, model_name, model_path, batch_size, condition_fn=lambda x: True):
         BaseClassifier.__init__(self, model_name, model_path, batch_size)
         self.condition_fn = condition_fn
-        local_bert_ner = "<BERT_NER_MODEL_PATH>"
+        local_bert_ner = os.environ.get("BERT_NER_MODEL_PATH", model_path)
         if os.path.exists(local_bert_ner):
             self.model = pipeline(
                 self.task,
@@ -115,7 +117,7 @@ class TokenClassifier(Classifier):
                 tokenizer=self.tokenizer,
                 device=0,
             )
-            print(f"Using local BERT NER: <BERT_NER_MODEL_PATH>")
+            print(f"Using local BERT NER: {local_bert_ner}")
         else:
             self.model = pipeline(
                 self.task,

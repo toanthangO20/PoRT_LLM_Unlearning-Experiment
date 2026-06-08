@@ -27,9 +27,10 @@ class AttackedModel:
         self.corrupt_method = corrupt_method
         self.corrupt_args = remove_none_values(corrupt_args)
         # Get the module to inject corruption
-        self.attack_module = get_nested_attr(
-            model.model, "<ATTACK_MODULE_PLACEHOLDER>"
-        )
+        attack_module_name = self.model_config.get("attack_module")
+        if not attack_module_name:
+            raise KeyError("model_config must define attack_module for AttackedModel")
+        self.attack_module = get_nested_attr(model.model, attack_module_name)
         self.classifier_threshold = classifier_threshold
         self.generation_config = model.generation_config
         self.embeddings_data = []
