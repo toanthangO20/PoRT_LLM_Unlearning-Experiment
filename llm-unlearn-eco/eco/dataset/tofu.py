@@ -143,8 +143,8 @@ class TOFU(BaseDataset):
         
         train_dataset = Dataset.from_dict(
             {
-                "text": retain_dataset["text"] + forget_dataset["text"],
-                "label": retain_dataset["label"] + forget_dataset["label"],
+                "text": list(retain_dataset["text"]) + list(forget_dataset["text"]),
+                "label": list(retain_dataset["label"]) + list(forget_dataset["label"]),
             }
         ) if len(retain_dataset) > 0 and len(forget_dataset) > 0 else Dataset.from_list([])
         
@@ -185,7 +185,7 @@ class TOFUPerturbed(TOFU):
     eval_answer_key = "choices"
 
     def __init__(self, formatting_tokens, eos_token):
-        super().__init__(formatting_tokens, eos_token)
+        super().__init__(formatting_tokens=formatting_tokens, eos_token=eos_token)
 
     def download(self):
         # Download method for TOFUPerturbed
