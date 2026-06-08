@@ -1,4 +1,4 @@
-# PoRT LLM Unlearning Experiment Plan
+﻿# PoRT LLM Unlearning Experiment Plan
 
 ## Mục tiêu
 
@@ -30,30 +30,31 @@ Definition of done cho bước "full pipeline":
 
 | Notebook | Mục đích | Trạng thái | Kết quả chính |
 | --- | --- | --- | --- |
-| `notebooks/smoke_tests/kaggle_smoke_test.ipynb` | Smoke test tổng hợp cho import, placeholder, TOFU, WMDP, tiny real model | Đã pass | `SMOKE TEST COMPLETED`; không còn syntax/import/placeholder blocker; TOFU và WMDP sample path chạy được |
-| `notebooks/smoke_tests/kaggle_wmdp_full_tiny_gpt2.ipynb` | Chạy full WMDP với `sshleifer/tiny-gpt2`, no-corrupt, để test scale dataset/output | Đã pass | Full `3668` rows; overall acc `0.255998`; bio `0.250589`, chem `0.247549`, cyber `0.261198`; chạy trên CPU Kaggle |
-| `notebooks/smoke_tests/kaggle_wmdp_target_model_mini_gpu.ipynb` | Mini test target model `microsoft/phi-1_5`, WMDP `sample_size=2`, no-corrupt | Đã pass | T4 x2; model `1.418B` params; total `6` rows; overall acc `0.166667` |
-| `notebooks/smoke_tests/kaggle_wmdp_target_model_full_gpu.ipynb` | Full WMDP baseline với target model, no-corrupt | Đã pass | T4 x2; full `3668` rows; overall acc `0.394766`; bio `0.523959`, chem `0.335784`, cyber `0.324107` |
-| `notebooks/smoke_tests/kaggle_wmdp_target_model_corrupt_hook_mini_gpu.ipynb` | Mini test `AttackedModel` corruption hook không dùng classifier, WMDP `sample_size=2` | Đã pass | Hook path chạy end-to-end; baseline/corrupt đều hoàn tất; total `18` prediction rows |
-| `notebooks/smoke_tests/kaggle_wmdp_target_model_corrupt_hook_full_gpu.ipynb` | Full WMDP corruption hook không dùng classifier | Đã tạo, chưa chạy | Đây là next immediate run để kiểm tra scale của corruption hook trên full dataset |
+| `notebooks/smoke_tests/01_kaggle_smoke_test.ipynb` | Smoke test tổng hợp cho import, placeholder, TOFU, WMDP, tiny real model | Đã pass | `SMOKE TEST COMPLETED`; không còn syntax/import/placeholder blocker; TOFU và WMDP sample path chạy được |
+| `notebooks/smoke_tests/02_kaggle_wmdp_full_tiny_gpt2.ipynb` | Chạy full WMDP với `sshleifer/tiny-gpt2`, no-corrupt, để test scale dataset/output | Đã pass | Full `3668` rows; overall acc `0.255998`; bio `0.250589`, chem `0.247549`, cyber `0.261198`; chạy trên CPU Kaggle |
+| `notebooks/smoke_tests/03_kaggle_wmdp_target_model_mini_gpu.ipynb` | Mini test target model `microsoft/phi-1_5`, WMDP `sample_size=2`, no-corrupt | Đã pass | T4 x2; model `1.418B` params; total `6` rows; overall acc `0.166667` |
+| `notebooks/smoke_tests/04_kaggle_wmdp_target_model_full_gpu.ipynb` | Full WMDP baseline với target model, no-corrupt | Đã pass | T4 x2; full `3668` rows; overall acc `0.394766`; bio `0.523959`, chem `0.335784`, cyber `0.324107` |
+| `notebooks/smoke_tests/05_kaggle_wmdp_target_model_corrupt_hook_mini_gpu.ipynb` | Mini test `AttackedModel` corruption hook không dùng classifier, WMDP `sample_size=2` | Đã pass | Hook path chạy end-to-end; baseline/corrupt đều hoàn tất; total `18` prediction rows |
+| `notebooks/smoke_tests/06_kaggle_wmdp_target_model_corrupt_hook_full_gpu.ipynb` | Full WMDP corruption hook không dùng classifier | Đã pass | T4 x2; full `3668` rows mỗi run; baseline overall `0.394766`; `zero_out_first_n` overall `0.246183` với bio `0.245090`, chem `0.235294`, cyber `0.249119`; `flip_sign_first_n` overall `0.241821` với bio `0.239592`, chem `0.267157`, cyber `0.238047` |
 
 ## Phân tích trạng thái hiện tại
 
-Baseline target-model full WMDP no-corrupt đã đủ tin cậy để làm mốc so sánh. Corrupt-hook mini cũng đã xác nhận nhánh `AttackedModel` và hook không bị lỗi cú pháp/runtime trên sample nhỏ.
+Baseline target-model full WMDP no-corrupt đã đủ tin cậy để làm mốc so sánh. Corrupt-hook full không classifier đã xác nhận nhánh `AttackedModel` scale được lên full WMDP và kéo accuracy về gần random-choice baseline.
 
 Điểm chưa hoàn tất:
 
-- Chưa chạy full WMDP với corruption hook.
 - Chưa chạy classifier-gated PoRT vì cần artifact classifier và biến môi trường `WMDP_CLASSIFIER_PATH`.
-- Script canonical `llm-unlearn-eco/scripts/evaluate_wmdp.py` vẫn có monkey patch `HFModel` cũ, chưa đồng bộ hoàn toàn với wrapper `HFModel` đã sửa và các notebook mới.
+- Script canonical `llm-unlearn-eco/scripts/evaluate_wmdp.py` đã được chuẩn hóa, nhưng chưa chạy Kaggle mini với target model để xác nhận runtime GPU.
 
 ## Kế hoạch triển khai tiếp theo
 
 ### Bước 1: Chạy full corrupt-hook không classifier
 
+Trạng thái: **Đã pass**.
+
 Notebook:
 
-`notebooks/smoke_tests/kaggle_wmdp_target_model_corrupt_hook_full_gpu.ipynb`
+`notebooks/smoke_tests/06_kaggle_wmdp_target_model_corrupt_hook_full_gpu.ipynb`
 
 Mục tiêu:
 
@@ -76,7 +77,16 @@ Tiêu chí pass:
 - Có `summary.json`, `summary_by_run.csv`, `predictions.csv`, `predictions_partial.csv`.
 - Accuracy của corrupt methods có khác biệt đủ rõ để xác nhận hook ảnh hưởng trên full set.
 
+Kết quả:
+
+- `baseline_none`: overall `0.394766`; bio `0.523959`, chem `0.335784`, cyber `0.324107`.
+- `zero_out_first_n`: overall `0.246183`; bio `0.245090`, chem `0.235294`, cyber `0.249119`.
+- `flip_sign_first_n`: overall `0.241821`; bio `0.239592`, chem `0.267157`, cyber `0.238047`.
+- Runtime mỗi full pass khoảng `5.1`-`5.2` phút trên Kaggle T4 x2 với `PORT_WMDP_BATCH_SIZE=1`.
+
 ### Bước 2: Chuẩn hóa script pipeline `evaluate_wmdp.py`
+
+Trạng thái: **Đã triển khai, cần chạy Kaggle mini với target model để xác nhận runtime GPU**.
 
 Mục tiêu:
 
@@ -105,11 +115,20 @@ Tiêu chí pass:
 - Script chạy được corrupt-hook với `--sample_size 2 --attack_all_prompts`.
 - Kết quả tương đương notebook mini theo row count và không lỗi.
 
+Kết quả local hiện tại:
+
+- `evaluate_wmdp.py` đã bỏ monkey patch `HFModel` cũ và dùng runtime config sinh trong `results/<run_name>/model_config`.
+- Đã thêm `--attack_all_prompts`, `--torch_dtype`, `--attn_implementation`, `--model_path`, `--target_hf_name`, `--batch_size`, `--sample_size`, `--output_dir`, `--run_name`.
+- Output chuẩn gồm `run_config.json`, `summary.json`, `summary_by_run.csv`, `summary_overall.csv`, `predictions.csv`, partial artifacts, và `attack_stats.csv` cho corrupt runs.
+- Local smoke bằng `tiny-gpt2`, `sample_size=1` đã pass cho original và `zero_out_first_n --attack_all_prompts`, mỗi run ghi đủ `3` prediction rows.
+
 ### Bước 3: Tạo notebook/script-level smoke test cho pipeline canonical
+
+Trạng thái: **Đã tạo notebook, chưa chạy trên Kaggle**.
 
 Notebook đề xuất:
 
-`notebooks/smoke_tests/kaggle_wmdp_pipeline_script_mini_gpu.ipynb`
+`notebooks/smoke_tests/07_kaggle_wmdp_pipeline_script_mini_gpu.ipynb`
 
 Mục tiêu:
 
@@ -250,8 +269,6 @@ Tài liệu cần tạo sau full runs:
 
 ## Next immediate action
 
-Chạy notebook sau trên Kaggle:
+Chạy notebook script-level mini test trên Kaggle để xác nhận canonical entrypoint với target model:
 
-`notebooks/smoke_tests/kaggle_wmdp_target_model_corrupt_hook_full_gpu.ipynb`
-
-Nếu run pass, bước tiếp theo là sửa `llm-unlearn-eco/scripts/evaluate_wmdp.py` để dùng nó làm canonical full pipeline entrypoint, sau đó tạo notebook script-level mini test.
+`notebooks/smoke_tests/07_kaggle_wmdp_pipeline_script_mini_gpu.ipynb`
