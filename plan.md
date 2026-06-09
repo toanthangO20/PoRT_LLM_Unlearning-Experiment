@@ -37,6 +37,7 @@ Definition of done cho bước "full pipeline":
 | `notebooks/smoke_tests/05_kaggle_wmdp_target_model_corrupt_hook_mini_gpu.ipynb` | Mini test `AttackedModel` corruption hook không dùng classifier, WMDP `sample_size=2` | Đã pass | Hook path chạy end-to-end; baseline/corrupt đều hoàn tất; total `18` prediction rows |
 | `notebooks/smoke_tests/06_kaggle_wmdp_target_model_corrupt_hook_full_gpu.ipynb` | Full WMDP corruption hook không dùng classifier | Đã pass | T4 x2; full `3668` rows mỗi run; baseline overall `0.394766`; `zero_out_first_n` overall `0.246183` với bio `0.245090`, chem `0.235294`, cyber `0.249119`; `flip_sign_first_n` overall `0.241821` với bio `0.239592`, chem `0.267157`, cyber `0.238047` |
 | `notebooks/smoke_tests/08_kaggle_wmdp_classifier_gated_mini_gpu.ipynb` | Mini test classifier-gated PoRT qua script canonical, WMDP `sample_size=2`, `zero_out_first_n` | Đã chuẩn bị, chờ artifact classifier | Notebook tự resolve/validate `WMDP_CLASSIFIER_PATH`, load thử `PromptClassifier`, chạy script không dùng `--attack_all_prompts`, rồi assert `attack_stats.csv` |
+| `notebooks/smoke_tests/09_kaggle_wmdp_classifier_gated_multi_config_mini_gpu.ipynb` | Mini test classifier-gated PoRT với nhiều corrupt configs | Đã tạo, chờ Kaggle pass/fail | Reuse classifier flow từ notebook `08`, chạy tuần tự `zero_out`, `flip_sign`, `rand_noise_1`, `rand_noise_full`, rồi ghi aggregate summary/attack stats |
 
 ## Phân tích trạng thái hiện tại
 
@@ -200,6 +201,8 @@ Việc đã làm:
 
 ### Bước 5: Chạy classifier-gated mini với nhiều corrupt configs
 
+Trạng thái: **Đã tạo notebook, chờ chạy Kaggle**.
+
 Configs hiện có:
 
 - `multiple_choice_zero_out.yaml`
@@ -220,6 +223,15 @@ Tiêu chí pass:
 - Không OOM.
 - Không NaN logits.
 - Có output artifact cho từng config.
+
+Notebook:
+
+`notebooks/smoke_tests/09_kaggle_wmdp_classifier_gated_multi_config_mini_gpu.ipynb`
+
+Output aggregate:
+
+- `/kaggle/working/wmdp_classifier_gated_multi_config_mini_summary.csv`
+- `/kaggle/working/wmdp_classifier_gated_multi_config_mini_attack_stats.csv`
 
 ### Bước 6: Chạy classifier-gated full WMDP
 
