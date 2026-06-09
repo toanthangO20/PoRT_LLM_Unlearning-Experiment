@@ -36,6 +36,7 @@ Definition of done cho bước "full pipeline":
 | `notebooks/smoke_tests/04_kaggle_wmdp_target_model_full_gpu.ipynb` | Full WMDP baseline với target model, no-corrupt | Đã pass | T4 x2; full `3668` rows; overall acc `0.394766`; bio `0.523959`, chem `0.335784`, cyber `0.324107` |
 | `notebooks/smoke_tests/05_kaggle_wmdp_target_model_corrupt_hook_mini_gpu.ipynb` | Mini test `AttackedModel` corruption hook không dùng classifier, WMDP `sample_size=2` | Đã pass | Hook path chạy end-to-end; baseline/corrupt đều hoàn tất; total `18` prediction rows |
 | `notebooks/smoke_tests/06_kaggle_wmdp_target_model_corrupt_hook_full_gpu.ipynb` | Full WMDP corruption hook không dùng classifier | Đã pass | T4 x2; full `3668` rows mỗi run; baseline overall `0.394766`; `zero_out_first_n` overall `0.246183` với bio `0.245090`, chem `0.235294`, cyber `0.249119`; `flip_sign_first_n` overall `0.241821` với bio `0.239592`, chem `0.267157`, cyber `0.238047` |
+| `notebooks/smoke_tests/08_kaggle_wmdp_classifier_gated_mini_gpu.ipynb` | Mini test classifier-gated PoRT qua script canonical, WMDP `sample_size=2`, `zero_out_first_n` | Đã chuẩn bị, chờ artifact classifier | Notebook tự resolve/validate `WMDP_CLASSIFIER_PATH`, load thử `PromptClassifier`, chạy script không dùng `--attack_all_prompts`, rồi assert `attack_stats.csv` |
 
 ## Phân tích trạng thái hiện tại
 
@@ -43,8 +44,8 @@ Baseline target-model full WMDP no-corrupt đã đủ tin cậy để làm mốc
 
 Điểm chưa hoàn tất:
 
-- Chưa chạy classifier-gated PoRT vì cần artifact classifier và biến môi trường `WMDP_CLASSIFIER_PATH`.
-- Script canonical `llm-unlearn-eco/scripts/evaluate_wmdp.py` đã được chuẩn hóa, nhưng chưa chạy Kaggle mini với target model để xác nhận runtime GPU.
+- Chưa chạy classifier-gated PoRT vì cần artifact classifier thật và biến môi trường `WMDP_CLASSIFIER_PATH`.
+- Notebook/script-level cho classifier-gated mini đã sẵn sàng, nhưng chưa có kết quả Kaggle pass/fail.
 
 ## Kế hoạch triển khai tiếp theo
 
@@ -160,6 +161,8 @@ Tiêu chí pass:
 
 ### Bước 4: Chuẩn bị classifier-gated PoRT
 
+Trạng thái: **Đã chuẩn bị notebook/script-level, chờ artifact classifier để chạy Kaggle**.
+
 Mục tiêu:
 
 - Chạy được pipeline đúng hướng PoRT: chỉ attack prompt được classifier đánh dấu là WMDP-relevant.
@@ -185,6 +188,14 @@ Tiêu chí pass:
 - Classifier-gated run với `sample_size=2` hoàn tất.
 - Có log attack labels.
 - Có predictions và summary.
+
+Việc đã làm:
+
+- Thêm notebook `notebooks/smoke_tests/08_kaggle_wmdp_classifier_gated_mini_gpu.ipynb`.
+- Notebook validate sớm classifier path là local Hugging Face text-classification model directory.
+- Notebook load thử `PromptClassifier` trên một prompt WMDP và một prompt non-WMDP trước khi tải target model.
+- Notebook chạy `evaluate_wmdp.py` với `multiple_choice_zero_out.yaml`, `sample_size=2`, không bật `--attack_all_prompts`.
+- `evaluate_wmdp.py` đã validate `WMDP_CLASSIFIER_PATH`/`--classifier_path` trước khi load target model nếu task config có corrupt method và không bật `--attack_all_prompts`.
 
 ### Bước 5: Chạy classifier-gated mini với nhiều corrupt configs
 
@@ -276,8 +287,10 @@ Tài liệu cần tạo sau full runs:
 
 ## Next immediate action
 
-Chuẩn bị classifier-gated PoRT mini run:
+Chạy classifier-gated PoRT mini run trên Kaggle:
 
 - Cung cấp hoặc mount classifier artifact trên Kaggle.
-- Set `WMDP_CLASSIFIER_PATH=/kaggle/input/...`.
-- Chạy script canonical với `multiple_choice_zero_out.yaml`, `sample_size=2`, không bật `--attack_all_prompts`, để xác nhận classifier load được và `attack_stats.csv` có `num_prompts`, `num_attacked`, `attack_rate`.
+- Set `WMDP_CLASSIFIER_PATH=/kaggle/input/...` hoặc điền `MANUAL_CLASSIFIER_PATH` trong notebook `08`.
+- Chạy `notebooks/smoke_tests/08_kaggle_wmdp_classifier_gated_mini_gpu.ipynb`.
+- Xác nhận `attack_stats.csv` có `num_prompts`, `num_attacked`, `attack_rate`, và `classifier_mode=classifier_gated`.
+- Nếu `attack_rate` toàn `0` hoặc toàn `1`, debug threshold hoặc label mapping trước khi chạy full.

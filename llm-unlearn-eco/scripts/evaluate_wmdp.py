@@ -153,16 +153,9 @@ def make_attacked_model(base_model, task_params, args):
     if args.attack_all_prompts:
         prompt_classifier = None
     else:
-        classifier_path = args.classifier_path or os.environ.get("WMDP_CLASSIFIER_PATH")
-        if not classifier_path:
-            raise ValueError(
-                "WMDP_CLASSIFIER_PATH or --classifier_path must be set for "
-                "classifier-gated corruption. Use --attack_all_prompts for "
-                "classifier-free corrupt-hook runs."
-            )
         prompt_classifier = PromptClassifier(
             model_name=args.classifier_model_name,
-            model_path=classifier_path,
+            model_path=args.classifier_path,
             batch_size=args.batch_size,
         )
 
@@ -175,6 +168,37 @@ def make_attacked_model(base_model, task_params, args):
         classifier_threshold=args.classifier_threshold,
     )
     return attacked_model, prompt_classifier
+
+
+def requires_classifier(tasks, attack_all_prompts):
+    if attack_all_prompts:
+        return False
+    return any(
+        task.get("params", {}).get("corrupt_method") is not None for task in tasks
+    )
+
+
+def resolve_classifier_path(args, tasks):
+    if not requires_classifier(tasks, args.attack_all_prompts):
+        return args.classifier_path or os.environ.get("WMDP_CLASSIFIER_PATH")
+
+    classifier_path = args.classifier_path or os.environ.get("WMDP_CLASSIFIER_PATH")
+    if not classifier_path:
+        raise ValueError(
+            "WMDP_CLASSIFIER_PATH or --classifier_path must be set for "
+            "classifier-gated corruption. Use --attack_all_prompts for "
+            "classifier-free corrupt-hook runs."
+        )
+
+    resolved = Path(classifier_path).expanduser()
+    if not resolved.exists():
+        raise FileNotFoundError(f"WMDP classifier path does not exist: {resolved}")
+    if not resolved.is_dir():
+        raise NotADirectoryError(
+            "WMDP classifier path must be a local Hugging Face model directory: "
+            f"{resolved}"
+        )
+    return str(resolved)
 
 
 def extract_predictions(outputs, run_label, data_module, corrupt_method, corrupt_args):
@@ -384,6 +408,7 @@ def main():
         task.get("params", {}).get("corrupt_method") is not None for task in tasks
     ):
         tasks = [{"name": "baseline", "params": {"none": None}}] + tasks
+    args.classifier_path = resolve_classifier_path(args, tasks)
 
     run_config = {
         "model_name": args.model_name,
@@ -399,7 +424,7 @@ def main():
         "attn_implementation": runtime_config.get("attn_implementation"),
         "trust_remote_code": runtime_config.get("trust_remote_code"),
         "classifier_threshold": args.classifier_threshold,
-        "classifier_path": args.classifier_path or os.environ.get("WMDP_CLASSIFIER_PATH"),
+        "classifier_path": args.classifier_path,
         "attack_all_prompts": args.attack_all_prompts,
         "include_baseline": args.include_baseline,
         "include_mmlu": args.include_mmlu,
