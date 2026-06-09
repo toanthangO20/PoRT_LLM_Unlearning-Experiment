@@ -195,6 +195,7 @@ Việc đã làm:
 - Notebook validate sớm classifier path là local Hugging Face text-classification model directory.
 - Notebook load thử `PromptClassifier` trên một prompt WMDP và một prompt non-WMDP trước khi tải target model.
 - Notebook chạy `evaluate_wmdp.py` với `multiple_choice_zero_out.yaml`, `sample_size=2`, không bật `--attack_all_prompts`.
+- Nếu chưa mount artifact classifier thật, notebook có fallback tạo tiny debug classifier local để smoke-test plumbing; kết quả này không dùng cho experiment.
 - `evaluate_wmdp.py` đã validate `WMDP_CLASSIFIER_PATH`/`--classifier_path` trước khi load target model nếu task config có corrupt method và không bật `--attack_all_prompts`.
 
 ### Bước 5: Chạy classifier-gated mini với nhiều corrupt configs
@@ -290,7 +291,8 @@ Tài liệu cần tạo sau full runs:
 Chạy classifier-gated PoRT mini run trên Kaggle:
 
 - Cung cấp hoặc mount classifier artifact trên Kaggle.
-- Set `WMDP_CLASSIFIER_PATH=/kaggle/input/...` hoặc điền `MANUAL_CLASSIFIER_PATH` trong notebook `08`.
+- Set `WMDP_CLASSIFIER_PATH=/kaggle/input/...` hoặc điền `MANUAL_CLASSIFIER_PATH` trong notebook `08` nếu muốn chạy classifier thật.
 - Chạy `notebooks/smoke_tests/08_kaggle_wmdp_classifier_gated_mini_gpu.ipynb`.
 - Xác nhận `attack_stats.csv` có `num_prompts`, `num_attacked`, `attack_rate`, và `classifier_mode=classifier_gated`.
 - Nếu `attack_rate` toàn `0` hoặc toàn `1`, debug threshold hoặc label mapping trước khi chạy full.
+- Nếu notebook dùng debug classifier, chỉ xem đó là pass cho script plumbing; cần chạy lại với classifier thật trước Bước 5.
