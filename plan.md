@@ -195,7 +195,7 @@ Việc đã làm:
 - Notebook validate sớm classifier path là local Hugging Face text-classification model directory.
 - Notebook load thử `PromptClassifier` trên một prompt WMDP và một prompt non-WMDP trước khi tải target model.
 - Notebook chạy `evaluate_wmdp.py` với `multiple_choice_zero_out.yaml`, `sample_size=2`, không bật `--attack_all_prompts`.
-- Nếu chưa mount artifact classifier thật, notebook có fallback tạo tiny debug classifier local để smoke-test plumbing; kết quả này không dùng cho experiment.
+- Nếu chưa mount artifact classifier thật, notebook có thể tải classifier từ Hugging Face repo/archive URL hoặc auto-train một classifier WMDP-vs-non-WMDP thật từ WMDP/TOFU trong repo và lưu vào `/kaggle/working`.
 - `evaluate_wmdp.py` đã validate `WMDP_CLASSIFIER_PATH`/`--classifier_path` trước khi load target model nếu task config có corrupt method và không bật `--attack_all_prompts`.
 
 ### Bước 5: Chạy classifier-gated mini với nhiều corrupt configs
@@ -295,4 +295,4 @@ Chạy classifier-gated PoRT mini run trên Kaggle:
 - Chạy `notebooks/smoke_tests/08_kaggle_wmdp_classifier_gated_mini_gpu.ipynb`.
 - Xác nhận `attack_stats.csv` có `num_prompts`, `num_attacked`, `attack_rate`, và `classifier_mode=classifier_gated`.
 - Nếu `attack_rate` toàn `0` hoặc toàn `1`, debug threshold hoặc label mapping trước khi chạy full.
-- Nếu notebook dùng debug classifier, chỉ xem đó là pass cho script plumbing; cần chạy lại với classifier thật trước Bước 5.
+- Nếu notebook dùng classifier auto-trained trong session, xem đó là pass cho pipeline classifier-gated; trước full experiment nên khóa nguồn classifier bằng `PORT_WMDP_CLASSIFIER_HF_REPO` hoặc `PORT_WMDP_CLASSIFIER_ARCHIVE_URL` để recipe reproducible hơn.
