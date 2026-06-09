@@ -2,17 +2,18 @@
 
 ## Mục tiêu
 
-Mục tiêu hiện tại là đưa repo đến trạng thái có thể chạy được pipeline full dataset trên Kaggle GPU, bắt đầu từ baseline WMDP no-corrupt, sau đó mở rộng sang corruption hook, rồi đến classifier-gated PoRT pipeline giống hướng chạy full experiment.
+Mục tiêu hiện tại là reproduce lại kết quả paper gốc theo từng nấc kiểm chứng được trên Kaggle GPU. Paper-baseline smoke test đã pass; bước trước mắt là chạy full baseline/no-defense trên `original + noise_prefix + composite`, sau đó mới tạo smoke test cho pipeline PoRT paper-faithful.
 
 Definition of done cho bước "full pipeline":
 
 - Chạy được từ một Kaggle session sạch bằng cách clone GitHub repo.
 - Load được target model bằng config trong repo hoặc runtime config sinh trong notebook/script.
 - Load đủ WMDP full dataset: `wmdp-bio`, `wmdp-chem`, `wmdp-cyber`.
-- Chạy được ít nhất một baseline no-corrupt và một corrupt method trên full WMDP.
+- Smoke test được paper baseline/no-defense trên WMDP `original`, `noise_prefix`, và `composite` trước khi chạy full.
+- Chạy được ít nhất một baseline no-defense và một PoRT method trên full WMDP.
 - Nếu dùng classifier-gated PoRT, `WMDP_CLASSIFIER_PATH` được cấu hình rõ, classifier load được, có log số prompt bị attack.
 - Ghi đủ artifacts: `run_config.json`, `summary.json`, predictions CSV, partial artifacts nếu run dài.
-- Tổng số row WMDP full cho mỗi run là `3668`.
+- Tổng số row WMDP full là `3668` cho mỗi variant; với `original + noise_prefix + composite` tổng baseline/no-defense mặc định là `11004` rows.
 
 ## Kết quả đã đạt được
 
@@ -38,273 +39,146 @@ Definition of done cho bước "full pipeline":
 | `notebooks/smoke_tests/06_kaggle_wmdp_target_model_corrupt_hook_full_gpu.ipynb` | Full WMDP corruption hook không dùng classifier | Đã pass | T4 x2; full `3668` rows mỗi run; baseline overall `0.394766`; `zero_out_first_n` overall `0.246183` với bio `0.245090`, chem `0.235294`, cyber `0.249119`; `flip_sign_first_n` overall `0.241821` với bio `0.239592`, chem `0.267157`, cyber `0.238047` |
 | `notebooks/smoke_tests/08_kaggle_wmdp_classifier_gated_mini_gpu.ipynb` | Mini test classifier-gated PoRT qua script canonical, WMDP `sample_size=2`, `zero_out_first_n` | Đã chuẩn bị, chờ artifact classifier | Notebook tự resolve/validate `WMDP_CLASSIFIER_PATH`, load thử `PromptClassifier`, chạy script không dùng `--attack_all_prompts`, rồi assert `attack_stats.csv` |
 | `notebooks/smoke_tests/09_kaggle_wmdp_classifier_gated_multi_config_mini_gpu.ipynb` | Mini test classifier-gated PoRT với nhiều corrupt configs | Đã tạo, chờ Kaggle pass/fail | Reuse classifier flow từ notebook `08`, chạy tuần tự `zero_out`, `flip_sign`, `rand_noise_1`, `rand_noise_full`, rồi ghi aggregate summary/attack stats |
+| `notebooks/smoke_tests/10_kaggle_paper_baseline_wmdp_smoke_test.ipynb` | Paper baseline/no-defense WMDP smoke test vài sample trên `original`, `noise_prefix`, `composite` | Đã pass Kaggle | Full control path chạy thật với `18/18` rows; overall acc `0.166667`; artifacts ghi đủ; không dùng PoRT/classifier/corruption |
+| `notebooks/paper_baselines/11_kaggle_paper_baseline_wmdp_full_no_defense.ipynb` | Full paper baseline/no-defense trên `original`, `noise_prefix`, `composite` | Đã tạo, chờ chạy Kaggle | Mặc định full dataset, expected `11004` rows; có partial artifacts sau từng `variant/domain` |
 
 ## Phân tích trạng thái hiện tại
 
-Baseline target-model full WMDP no-corrupt đã đủ tin cậy để làm mốc so sánh. Corrupt-hook full không classifier đã xác nhận nhánh `AttackedModel` scale được lên full WMDP và kéo accuracy về gần random-choice baseline.
+Baseline target-model full WMDP no-corrupt đã đủ tin cậy để làm mốc so sánh nội bộ. Notebook `10` đã xác nhận paper baseline/no-defense smoke pass trên đúng các biến thể WMDP mà repo paper cung cấp (`original`, `noise_prefix`, `composite`). Các notebook corruption hook và classifier-gated trước đó vẫn là nhánh engineering/adapted, chưa phải reproduction paper gốc.
 
 Điểm chưa hoàn tất:
 
-- Chưa chạy classifier-gated PoRT vì cần artifact classifier thật và biến môi trường `WMDP_CLASSIFIER_PATH`.
-- Notebook/script-level cho classifier-gated mini đã sẵn sàng, nhưng chưa có kết quả Kaggle pass/fail.
+- Chưa chạy notebook `11` trên Kaggle để lấy full paper baseline/no-defense cho cả `original + noise_prefix + composite`.
+- Chưa smoke test pipeline PoRT paper-faithful; classifier-gated/corrupt-hook 08/09 chỉ nên xem là thử nghiệm phụ cho tới khi paper baseline full pass.
 
 ## Kế hoạch triển khai tiếp theo
 
-### Bước 1: Chạy full corrupt-hook không classifier
+### Bước 1: Chạy full paper baseline/no-defense
 
-Trạng thái: **Đã pass**.
+Trạng thái: **Đã tạo notebook, chờ chạy Kaggle**.
 
 Notebook:
 
-`notebooks/smoke_tests/06_kaggle_wmdp_target_model_corrupt_hook_full_gpu.ipynb`
+`notebooks/paper_baselines/11_kaggle_paper_baseline_wmdp_full_no_defense.ipynb`
 
 Mục tiêu:
 
-- Chạy full WMDP với baseline tùy chọn và corrupt methods:
-  - `zero_out_first_n`
-  - `flip_sign_first_n`
-- Kiểm tra scale của `AttackedModel` trên full dataset.
-- So sánh effect corrupt với baseline `phi-1_5` no-corrupt đã có.
-
-Khuyến nghị Kaggle:
-
-- GPU: T4 x2.
-- Giữ `PORT_WMDP_BATCH_SIZE=1`.
-- Nếu muốn tiết kiệm thời gian vì baseline full đã có, đặt `PORT_RUN_BASELINE=0`.
+- Chạy full WMDP baseline/control không PoRT, không classifier, không corruption hook.
+- Bao phủ `original`, `noise_prefix`, `composite`.
+- Bao phủ `bio`, `chem`, `cyber`.
+- Ghi partial artifacts sau từng `variant/domain` để có thể inspect nếu Kaggle session bị ngắt.
 
 Tiêu chí pass:
 
 - Không có runtime error.
-- Mỗi corrupt method chạy đủ `3668` rows.
-- Có `summary.json`, `summary_by_run.csv`, `predictions.csv`, `predictions_partial.csv`.
-- Accuracy của corrupt methods có khác biệt đủ rõ để xác nhận hook ảnh hưởng trên full set.
+- Tổng row mặc định là `11004`.
+- Mỗi variant có `3668` rows.
+- Có đủ `predictions.csv`, `summary_by_variant_domain.csv`, `summary_by_variant.csv`, `summary_overall.csv`, `completed_jobs.csv`, `summary.json`, `run_config.json`.
+- Kết quả `original` khớp gần baseline full đã có: overall khoảng `0.394766`, bio `0.523959`, chem `0.335784`, cyber `0.324107`.
 
-Kết quả:
+### Bước 2: Tạo PoRT paper-faithful smoke test
 
-- `baseline_none`: overall `0.394766`; bio `0.523959`, chem `0.335784`, cyber `0.324107`.
-- `zero_out_first_n`: overall `0.246183`; bio `0.245090`, chem `0.235294`, cyber `0.249119`.
-- `flip_sign_first_n`: overall `0.241821`; bio `0.239592`, chem `0.267157`, cyber `0.238047`.
-- Runtime mỗi full pass khoảng `5.1`-`5.2` phút trên Kaggle T4 x2 với `PORT_WMDP_BATCH_SIZE=1`.
+Trạng thái: **Chưa làm**.
 
-### Bước 2: Chuẩn hóa script pipeline `evaluate_wmdp.py`
+Notebook dự kiến:
 
-Trạng thái: **Đã pass Kaggle mini với target model**.
+`notebooks/smoke_tests/12_kaggle_paper_port_pipeline_smoke_test.ipynb`
 
 Mục tiêu:
 
-- Biến `llm-unlearn-eco/scripts/evaluate_wmdp.py` thành pipeline canonical có thể chạy full experiment thay vì chỉ notebook ad hoc.
+- Smoke test pipeline PoRT gốc với vài sample trước khi chạy full.
+- Không dùng nhánh classifier-gated/corrupt-hook 08/09 làm thay thế cho paper pipeline.
+- Chạy qua entrypoint hoặc wrapper dựa trên `PoRT_pipeline/WMDP/port_pipeline_wmdp.py`.
 
-Việc cần làm:
+Việc cần xử lý trước:
 
-- Gỡ hoặc thay `patch_hf_model()` cũ để dùng trực tiếp `eco.model.HFModel` đã sửa.
-- Thêm các runtime override giống notebook:
-  - `torch_dtype`
-  - `attn_implementation`
-  - `model_path`
-  - `batch_size`
-  - `sample_size`
-- Thêm mode corruption không classifier, ví dụ `--attack_all_prompts`, để script chạy được corrupt-hook tests mà không cần `WMDP_CLASSIFIER_PATH`.
-- Chuẩn hóa output:
-  - `run_config.json`
-  - `summary.json`
-  - predictions CSV
-  - partial outputs sau từng dataset/task.
-- Giữ lại `--save_logits` nhưng chỉ bật khi cần phân tích sâu vì file có thể lớn.
+- Loại bỏ hoặc truyền đầy đủ các `PATH_PLACEHOLDER` trong `PoRT_pipeline/WMDP/port_pipeline_wmdp.py`.
+- Tải hoặc clone artifact cần thiết bằng code, không phụ thuộc thêm file trong `/kaggle/input`:
+  - T5 AST/prefix model path.
+  - Target model path hoặc Hugging Face hub name.
+  - Classifier base model.
+  - Classifier head checkpoint.
+  - Example library JSON.
+- Dùng dataset path trong repo cho `original`, `noise_prefix`, `composite`.
+- Bật `--max_samples 2` hoặc tương đương để smoke test nhanh.
 
 Tiêu chí pass:
 
-- Script chạy được original no-corrupt với `--sample_size 2`.
-- Script chạy được corrupt-hook với `--sample_size 2 --attack_all_prompts`.
-- Kết quả tương đương notebook mini theo row count và không lỗi.
+- Chạy được ít nhất một domain với vài sample end-to-end.
+- Có output generations, predicted choice, accuracy, rethink stats, timing stats.
+- Không còn hardcoded local path hoặc placeholder.
+- Artifact recipe đủ rõ để rerun từ Kaggle session sạch.
 
-Kết quả local hiện tại:
+### Bước 3: Chạy PoRT paper smoke đủ domain/variant
 
-- `evaluate_wmdp.py` đã bỏ monkey patch `HFModel` cũ và dùng runtime config sinh trong `results/<run_name>/model_config`.
-- Đã thêm `--attack_all_prompts`, `--torch_dtype`, `--attn_implementation`, `--model_path`, `--target_hf_name`, `--batch_size`, `--sample_size`, `--output_dir`, `--run_name`.
-- Output chuẩn gồm `run_config.json`, `summary.json`, `summary_by_run.csv`, `summary_overall.csv`, `predictions.csv`, partial artifacts, và `attack_stats.csv` cho corrupt runs.
-- Local smoke bằng `tiny-gpt2`, `sample_size=1` đã pass cho original và `zero_out_first_n --attack_all_prompts`, mỗi run ghi đủ `3` prediction rows.
-
-Kết quả Kaggle target-model mini:
-
-- Notebook `notebooks/smoke_tests/07_kaggle_wmdp_pipeline_script_mini_gpu.ipynb` đã pass trên commit `f0196e944244c067612e64f818bcd6e9dff50964`.
-- Original no-corrupt script run: `6` rows; overall acc `0.166667`; bio `0.5`, chem `0.0`, cyber `0.0`.
-- Corrupt-hook `zero_out_first_n --attack_all_prompts`: `6` rows; overall acc `0.333333`; bio `0.5`, chem `0.0`, cyber `0.5`.
-- Cả hai run đều ghi `run_config.json`, `summary.json`, `summary_by_run.csv`, `predictions.csv`.
-
-### Bước 3: Tạo notebook/script-level smoke test cho pipeline canonical
-
-Trạng thái: **Đã pass trên Kaggle**.
-
-Notebook đề xuất:
-
-`notebooks/smoke_tests/07_kaggle_wmdp_pipeline_script_mini_gpu.ipynb`
+Trạng thái: **Chờ Bước 2 pass**.
 
 Mục tiêu:
 
-- Không gọi trực tiếp Python classes trong notebook nữa.
-- Gọi `python llm-unlearn-eco/scripts/evaluate_wmdp.py ...` để test đúng entrypoint pipeline.
-
-Các run cần có:
-
-- No-corrupt:
-  - `task_config=multiple_choice_original.yaml`
-  - `sample_size=2`
-- Corrupt-hook không classifier:
-  - `task_config=multiple_choice_zero_out.yaml`
-  - `sample_size=2`
-  - `attack_all_prompts=true`
+- Mở rộng smoke test PoRT từ một domain sang `bio`, `chem`, `cyber`.
+- Chạy trên các variant cần cho bảng paper, tối thiểu `composite` và baseline input tương ứng.
+- Giữ `max_samples` nhỏ để xác nhận parity logic trước khi trả giá full runtime.
 
 Tiêu chí pass:
 
-- Script entrypoint chạy từ Kaggle clean clone.
-- Output được ghi đúng nơi.
-- Không cần classifier artifact ở bước này.
+- Mỗi domain/variant có row count đúng với `max_samples`.
+- Accuracy/rethink stats được ghi theo domain/variant.
+- Không có lỗi parse đáp án A/B/C/D.
+- Runtime đủ thực tế để ước lượng full run.
 
-### Bước 4: Chuẩn bị classifier-gated PoRT
+### Bước 4: Chạy PoRT paper full dataset
 
-Trạng thái: **Đã chuẩn bị notebook/script-level, chờ artifact classifier để chạy Kaggle**.
+Trạng thái: **Chờ Bước 3 pass**.
 
 Mục tiêu:
 
-- Chạy được pipeline đúng hướng PoRT: chỉ attack prompt được classifier đánh dấu là WMDP-relevant.
-
-Yêu cầu artifact:
-
-- Có local classifier path trên Kaggle.
-- Set biến môi trường:
-  - `WMDP_CLASSIFIER_PATH=/kaggle/input/...`
-
-Việc cần kiểm tra:
-
-- Classifier load được bằng `PromptClassifier`.
-- Classifier chạy trên sample WMDP và non-WMDP.
-- Log số prompt bị attack theo dataset:
-  - `num_prompts`
-  - `num_attacked`
-  - `attack_rate`
-- Nếu attack rate toàn `0` hoặc toàn `1`, cần debug threshold hoặc classifier labels trước khi chạy full.
+- Chạy full PoRT paper pipeline trên WMDP theo recipe đã khóa.
+- So sánh trực tiếp với full no-defense baseline từ notebook `11`.
 
 Tiêu chí pass:
 
-- Classifier-gated run với `sample_size=2` hoàn tất.
-- Có log attack labels.
-- Có predictions và summary.
+- Full row count đúng cho từng domain/variant.
+- Có `final_generations_full.json`, metrics JSON/CSV, rethink stats, timing stats.
+- Có bảng so sánh baseline vs PoRT theo variant/domain.
+- Không chạy full nếu smoke còn placeholder, artifact không tái lập được, hoặc output parsing chưa ổn.
 
-Việc đã làm:
+### Bước 5: Thêm utility/general eval nếu paper table yêu cầu
 
-- Thêm notebook `notebooks/smoke_tests/08_kaggle_wmdp_classifier_gated_mini_gpu.ipynb`.
-- Notebook validate sớm classifier path là local Hugging Face text-classification model directory.
-- Notebook load thử `PromptClassifier` trên một prompt WMDP và một prompt non-WMDP trước khi tải target model.
-- Notebook chạy `evaluate_wmdp.py` với `multiple_choice_zero_out.yaml`, `sample_size=2`, không bật `--attack_all_prompts`.
-- Nếu chưa mount artifact classifier thật, notebook có thể tải classifier từ Hugging Face repo/archive URL hoặc auto-train một classifier WMDP-vs-non-WMDP thật từ WMDP/TOFU trong repo và lưu vào `/kaggle/working`.
-- `evaluate_wmdp.py` đã validate `WMDP_CLASSIFIER_PATH`/`--classifier_path` trước khi load target model nếu task config có corrupt method và không bật `--attack_all_prompts`.
-
-### Bước 5: Chạy classifier-gated mini với nhiều corrupt configs
-
-Trạng thái: **Đã tạo notebook, chờ chạy Kaggle**.
-
-Configs hiện có:
-
-- `multiple_choice_zero_out.yaml`
-- `multiple_choice_flip_sign.yaml`
-- `multiple_choice_rand_noise_1.yaml`
-- `multiple_choice_rand_noise_full.yaml`
-
-Thứ tự khuyến nghị:
-
-1. `zero_out_first_n`
-2. `flip_sign_first_n`
-3. `rand_noise_first_n` với strength nhỏ hoặc vừa
-4. `rand_noise_first_n` full strength sau khi đã có safety evidence
-
-Tiêu chí pass:
-
-- Mỗi config chạy được `sample_size=2`.
-- Không OOM.
-- Không NaN logits.
-- Có output artifact cho từng config.
-
-Notebook:
-
-`notebooks/smoke_tests/09_kaggle_wmdp_classifier_gated_multi_config_mini_gpu.ipynb`
-
-Output aggregate:
-
-- `/kaggle/working/wmdp_classifier_gated_multi_config_mini_summary.csv`
-- `/kaggle/working/wmdp_classifier_gated_multi_config_mini_attack_stats.csv`
-
-### Bước 6: Chạy classifier-gated full WMDP
+Trạng thái: **Chờ WMDP PoRT full ổn định**.
 
 Mục tiêu:
 
-- Chạy full WMDP với classifier-gated corruption.
-
-Khuyến nghị:
-
-- Bắt đầu với một method ổn định nhất từ mini, ưu tiên `zero_out_first_n` hoặc `flip_sign_first_n`.
-- `PORT_WMDP_BATCH_SIZE=1`.
-- Chạy WMDP-only trước, chưa thêm MMLU.
-- Bật partial artifact.
+- Đánh giá tradeoff giữa forgetting/robustness và utility.
+- Thêm MMLU hoặc subset utility tương ứng với paper sau khi WMDP pipeline đã ổn.
 
 Tiêu chí pass:
 
-- Full `3668` rows cho mỗi task.
-- Có summary theo dataset.
-- Có attack-rate log.
-- Có thể so sánh với no-corrupt baseline:
-  - baseline overall `0.394766`
-  - bio `0.523959`
-  - chem `0.335784`
-  - cyber `0.324107`
+- Utility metric được ghi cùng recipe và commit.
+- Có thể so sánh với baseline/no-defense và PoRT full.
 
-### Bước 7: Thêm utility eval sau khi WMDP pass
-
-Mục tiêu:
-
-- Đánh giá tradeoff giữa unlearning và general utility.
-
-Thứ tự:
-
-1. WMDP-only full pass.
-2. Thêm MMLU nếu dataset và runtime ổn.
-3. Nếu MMLU quá chậm, dùng MMLU subset hoặc sample trước.
-
-Tiêu chí pass:
-
-- WMDP corruption không làm pipeline vỡ.
-- Utility metric được ghi cùng artifact để so sánh.
-
-### Bước 8: Tổng hợp kết quả và khóa experiment recipe
+### Bước 6: Tổng hợp kết quả và khóa experiment recipe
 
 Artifacts cần chuẩn hóa:
 
-- `results/<run_name>/run_config.json`
-- `results/<run_name>/summary.json`
-- `results/<run_name>/summary_by_dataset.csv`
-- `results/<run_name>/predictions.csv`
-- `results/<run_name>/attack_stats.csv` nếu có classifier.
+- `run_config.json`
+- `summary.json`
+- `predictions.csv` hoặc `final_generations_full.json`
+- `summary_by_variant_domain.csv`
+- `timing_stats.json`
+- `rethink_stats.json` nếu chạy PoRT.
 
 Tài liệu cần tạo sau full runs:
 
-- `results/README.md` hoặc `notebooks/results_summary.md`
-- Bảng so sánh:
-  - model
-  - dataset
-  - corrupt method
-  - dims
-  - strength
-  - classifier threshold
-  - attack rate
-  - accuracy
-  - runtime
+- `results/README.md` hoặc `notebooks/results_summary.md`.
+- Bảng so sánh model, dataset variant, domain, method, accuracy, rethink count/rate, runtime, commit SHA.
 
 ## Next immediate action
 
-Chạy classifier-gated PoRT mini run trên Kaggle:
+Chạy full paper baseline/no-defense trên Kaggle:
 
-- Cung cấp hoặc mount classifier artifact trên Kaggle.
-- Set `WMDP_CLASSIFIER_PATH=/kaggle/input/...` hoặc điền `MANUAL_CLASSIFIER_PATH` trong notebook `08` nếu muốn chạy classifier thật.
-- Chạy `notebooks/smoke_tests/08_kaggle_wmdp_classifier_gated_mini_gpu.ipynb`.
-- Xác nhận `attack_stats.csv` có `num_prompts`, `num_attacked`, `attack_rate`, và `classifier_mode=classifier_gated`.
-- Nếu `attack_rate` toàn `0` hoặc toàn `1`, debug threshold hoặc label mapping trước khi chạy full.
-- Nếu notebook dùng classifier auto-trained trong session, xem đó là pass cho pipeline classifier-gated; trước full experiment nên khóa nguồn classifier bằng `PORT_WMDP_CLASSIFIER_HF_REPO` hoặc `PORT_WMDP_CLASSIFIER_ARCHIVE_URL` để recipe reproducible hơn.
+- Chạy `notebooks/paper_baselines/11_kaggle_paper_baseline_wmdp_full_no_defense.ipynb` từ một Kaggle session sạch.
+- Giữ mặc định `PORT_WMDP_SAMPLE_SIZE` unset để chạy full.
+- Giữ mặc định `PORT_WMDP_BASELINE_VARIANTS=original,noise_prefix,composite` và `PORT_WMDP_DOMAINS=bio,chem,cyber`.
+- Xác nhận tổng rows là `11004`.
+- Nếu notebook `11` pass, next action là tạo `12_kaggle_paper_port_pipeline_smoke_test.ipynb`.
+- Nếu notebook `11` fail, sửa data path/model config/evaluator trước khi đụng đến PoRT full.
