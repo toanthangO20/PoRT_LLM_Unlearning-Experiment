@@ -41,7 +41,7 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/09_kaggle_wmdp_classifier_gated_multi_config_mini_gpu.ipynb` | Mini classifier-gated nhiều corrupt configs | Đã tạo/chạy thử như nhánh phụ | Không dùng làm reproduction paper gốc |
 | `notebooks/smoke_tests/10_kaggle_paper_baseline_wmdp_smoke_test.ipynb` | Paper baseline/no-defense smoke trên `original`, `noise_prefix`, `composite` | Đã pass sau khi dùng `full_question` | Dùng để xác nhận prompt adversarial trước full baseline |
 | `notebooks/paper_baselines/11_kaggle_paper_baseline_wmdp_full_no_defense.ipynb` | Full paper baseline/no-defense trên `original`, `noise_prefix`, `composite` | Đã pass trên Kaggle | `11004` rows; no errors; prompt source đúng cho cả 3 variants |
-| `notebooks/smoke_tests/12_kaggle_paper_port_pipeline_smoke_test.ipynb` | PoRT paper pipeline smoke test vài sample | Đã tạo, chờ chạy Kaggle với artifact thật | Runtime patch paper script, build prompt đúng variant, ghi generations/metrics/timing/rethink |
+| `notebooks/smoke_tests/12_kaggle_paper_port_pipeline_smoke_test.ipynb` | PoRT paper pipeline smoke test vài sample | Đã pass trên Kaggle ở smoke mode | `composite/bio`, `2` rows, prompt source `full_question`, rethink `2/2`, valid predictions `1.0`; không phải paper metric vì dùng smoke post-judge |
 
 ### Kết quả notebook 11 mới nhất
 
@@ -94,9 +94,9 @@ Kết quả khóa:
 - `noise_prefix` và `composite` dùng `full_question`.
 - Artifacts đã có trong notebook output local sau khi overwrite từ Kaggle.
 
-### Bước 2: PoRT paper-faithful smoke test
+### Bước 2: PoRT paper control-flow smoke test
 
-Trạng thái: **Đã tạo notebook, chờ chạy Kaggle**.
+Trạng thái: **Hoàn tất ở smoke mode**.
 
 Notebook:
 
@@ -114,24 +114,42 @@ Mục tiêu:
   - `original` dùng `question + choices`.
   - `noise_prefix` và `composite` dùng `full_question`.
 
-Notebook yêu cầu artifact thật của PoRT. Có thể truyền qua env var hoặc URL download, không cần thêm file vào `/kaggle/input`:
+Notebook hiện có hai chế độ artifact:
 
-- `PORT_T5_MODEL_PATH` hoặc `PORT_T5_MODEL_HF_REPO` hoặc `PORT_T5_MODEL_URL`
-- `PORT_CLASSIFIER_BASE_MODEL`
-- `PORT_CLASSIFIER_HEAD_CKPT` hoặc `PORT_CLASSIFIER_HEAD_URL`
+- `PORT_ARTIFACT_MODE=smoke` là mặc định, chạy được trên Kaggle sạch bằng public T5 nhỏ và deterministic smoke post-judge để test control flow PoRT. Chế độ này không đại diện cho metric paper.
+- `PORT_ARTIFACT_MODE=official` dùng khi có artifact/checkpoint paper thật. Khi đó cần truyền:
+  - `PORT_T5_MODEL_PATH` hoặc `PORT_T5_MODEL_HF_REPO` hoặc `PORT_T5_MODEL_URL`
+  - `PORT_CLASSIFIER_BASE_MODEL`
+  - `PORT_CLASSIFIER_HEAD_CKPT` hoặc `PORT_CLASSIFIER_HEAD_URL`
 - Optional: `PORT_TARGET_MODEL_PATH`, `PORT_TARGET_MODEL_HUB_NAME`
 - Optional smoke config: `PORT_WMDP_VARIANT=composite`, `PORT_WMDP_DOMAIN=bio`, `PORT_MAX_SAMPLES=2`
+
+Kết quả chạy mới nhất:
+
+- Commit repo trong Kaggle: `fc450ab756f2ebe7bebe35fab35f35bb1ca73547`.
+- `PORT_ARTIFACT_MODE=smoke`.
+- Target model: `microsoft/phi-1_5`, dtype `float16`.
+- T5 smoke model: `google/flan-t5-small`.
+- Classifier: `smoke-posthoc-classifier`.
+- Variant/domain: `composite/bio`.
+- Rows: `2`.
+- Prompt source: `full_question`.
+- Rethink count/rate: `2 / 1.0`.
+- Valid prediction rate: `1.0`.
+- Accuracy: `0.0`, not meaningful for paper comparison.
+- Runtime: model load khoảng `3.21s`, run khoảng `78.48s`.
 
 Tiêu chí pass:
 
 - Chạy được ít nhất một domain với vài sample end-to-end.
 - Có output `final_generations_full.json`, `final_metrics_full.json`, `predictions.csv`, `rethink_stats.json`, `timing_stats.json`, `summary.json`, `run_config.json`.
 - Không còn hardcoded local path hoặc placeholder trong notebook runtime.
-- Nếu thiếu artifact, notebook fail sớm với danh sách env vars cần set.
+- Với `smoke` mode, không fail vì thiếu paper artifact.
+- Với `official` mode, nếu thiếu artifact thì notebook fail sớm với danh sách env vars cần set.
 
-### Bước 3: PoRT paper smoke đủ domain/variant
+### Bước 3: PoRT smoke matrix đủ domain/variant
 
-Trạng thái: **Chờ Bước 2 pass**.
+Trạng thái: **Next action**.
 
 Mục tiêu:
 
@@ -146,9 +164,26 @@ Tiêu chí pass:
 - Không có lỗi parse đáp án A/B/C/D.
 - Runtime đủ thực tế để ước lượng full run.
 
-### Bước 4: PoRT paper full dataset
+### Bước 4: Resolve official PoRT artifacts
 
 Trạng thái: **Chờ Bước 3 pass**.
+
+Mục tiêu:
+
+- Tìm hoặc tái tạo checkpoint paper thật cho:
+  - T5 AST/prefix compiler.
+  - Post-judgment classifier base model.
+  - Classifier head checkpoint.
+- Sau khi có artifact thật, chạy lại notebook `12` hoặc biến thể matrix với `PORT_ARTIFACT_MODE=official`.
+
+Hiện trạng:
+
+- Repo chính thức và OpenReview supplement có code/data nhưng chưa thấy public checkpoint T5/classifier.
+- Smoke mode chỉ kiểm chứng control flow, không chứng minh metric paper-faithful.
+
+### Bước 5: PoRT paper full dataset
+
+Trạng thái: **Chờ official artifact pass smoke/matrix**.
 
 Mục tiêu:
 
@@ -162,7 +197,7 @@ Tiêu chí pass:
 - Có bảng so sánh baseline vs PoRT theo variant/domain.
 - Không chạy full nếu smoke còn placeholder, artifact không tái lập được, hoặc output parsing chưa ổn.
 
-### Bước 5: Utility/general eval nếu paper table yêu cầu
+### Bước 6: Utility/general eval nếu paper table yêu cầu
 
 Trạng thái: **Chờ WMDP PoRT full ổn định**.
 
@@ -171,7 +206,7 @@ Mục tiêu:
 - Đánh giá tradeoff giữa forgetting/robustness và utility.
 - Thêm MMLU hoặc subset utility tương ứng với paper sau khi WMDP pipeline đã ổn.
 
-### Bước 6: Tổng hợp kết quả và khóa experiment recipe
+### Bước 7: Tổng hợp kết quả và khóa experiment recipe
 
 Artifacts cần chuẩn hóa:
 
@@ -189,15 +224,16 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Chạy notebook PoRT smoke mới trên Kaggle:
+Tạo notebook matrix tiếp theo:
 
-`notebooks/smoke_tests/12_kaggle_paper_port_pipeline_smoke_test.ipynb`
+`notebooks/smoke_tests/13_kaggle_paper_port_pipeline_smoke_matrix.ipynb`
 
-Thiết lập tối thiểu trước khi chạy:
+Mục tiêu notebook `13`:
 
-- Set `PORT_T5_MODEL_PATH` hoặc `PORT_T5_MODEL_HF_REPO` hoặc `PORT_T5_MODEL_URL`.
-- Set `PORT_CLASSIFIER_BASE_MODEL`.
-- Set `PORT_CLASSIFIER_HEAD_CKPT` hoặc `PORT_CLASSIFIER_HEAD_URL`.
-- Giữ mặc định `PORT_WMDP_VARIANT=composite`, `PORT_WMDP_DOMAIN=bio`, `PORT_MAX_SAMPLES=2` cho lần đầu.
+- Reuse logic đã pass của notebook `12`.
+- Chạy `PORT_ARTIFACT_MODE=smoke`.
+- Loop qua `original`, `noise_prefix`, `composite` và `bio`, `chem`, `cyber`.
+- Giữ `max_samples=2`, `batch_size=1`.
+- Ghi summary theo `variant/domain`: rows, prompt source, valid rate, rethink rate, runtime, artifact paths.
 
-Nếu notebook `12` pass, next action là tạo biến thể loop qua `bio/chem/cyber` và các variants cần thiết. Nếu notebook `12` fail, sửa artifact recipe hoặc runtime patch trong notebook trước khi mở rộng smoke/full.
+Không chạy full PoRT paper dataset sau notebook `12` vì kết quả hiện tại chỉ là smoke control flow. Sau notebook `13`, bước cần quyết định tiếp là tìm/tái tạo official T5/classifier artifacts và chạy lại ở `PORT_ARTIFACT_MODE=official`.
