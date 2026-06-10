@@ -44,6 +44,20 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/12_kaggle_paper_port_pipeline_smoke_test.ipynb` | PoRT paper pipeline smoke test vài sample | Đã pass trên Kaggle ở smoke mode | `composite/bio`, `2` rows, prompt source `full_question`, rethink `2/2`, valid predictions `1.0`; không phải paper metric vì dùng smoke post-judge |
 | `notebooks/smoke_tests/13_kaggle_paper_port_pipeline_smoke_matrix.ipynb` | PoRT smoke matrix đủ variant/domain | Đã pass trên Kaggle ở smoke mode | `9` jobs, `18` rows; prompt source đúng; rethink `18/18`; valid rate `1.0` ở 8/9 jobs, `composite/bio=0.5`; không phải paper metric |
 | `notebooks/smoke_tests/15_kaggle_paper_port_official_artifact_probe.ipynb` | Probe official PoRT artifacts | Đã pass trên Kaggle | Không tìm thấy public T5/classifier checkpoint; env artifact chưa set; `PORT_ARTIFACT_MODE=official` chưa chạy được |
+| `notebooks/artifact_bootstrap/16_kaggle_paper_port_recreated_artifacts_bootstrap.ipynb` | Bootstrap recreated PoRT artifacts | Đã pass trên Kaggle | Không phải smoke test; tạo được T5 recreated checkpoint/dataset và weak classifier dataset; classifier head vẫn unresolved |
+
+### Kết quả notebook 16 mới nhất
+
+Notebook `16` đã chạy xong bootstrap recreated artifacts trên Kaggle, không lỗi cell:
+
+- Run dir: `/kaggle/working/paper_port_recreated_artifacts_bootstrap`.
+- T5 AST/prefix compiler: train từ `google/flan-t5-small`, `3` epochs, output tại `/kaggle/working/paper_port_recreated_artifacts_bootstrap/artifacts/recreated_t5_ast_prefix_compiler`.
+- AST prefix dataset: `70` rows, split `56/7/7`, export `ast_prefix_train/eval/test.jsonl`.
+- Weak post-judgment classifier dataset: `1152` rows, split `921/115/116`, label cân bằng gần đều.
+- Manifest: `/kaggle/working/paper_port_recreated_artifacts_bootstrap/recreated_artifact_manifest.json`.
+- Summary: `/kaggle/working/paper_port_recreated_artifacts_bootstrap/recreated_artifact_summary.md`.
+
+Kết luận: notebook `16` đã tạo artifact recreated đầu tiên, nhưng đây không phải official paper checkpoint. Chưa thể chạy full PoRT paper metric vì pipeline official vẫn cần `SelectiveLLM2VecClassifier` plus head checkpoint, còn notebook `16` mới tạo T5 checkpoint và weak classifier data, chưa có classifier head tương thích.
 
 ### Kết quả notebook 11 mới nhất
 
@@ -292,16 +306,13 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Tạo nhánh recreated-artifacts, chưa chạy full PoRT paper dataset.
+Chuẩn bị dùng artifact recreated của notebook `16`, chưa chạy full PoRT paper dataset.
 
 Việc cần làm ngay:
 
-- Tạo notebook mới dự kiến `notebooks/smoke_tests/16_kaggle_paper_port_recreated_artifacts_bootstrap.ipynb`.
-- Mục tiêu notebook `16`:
-  - Tạo `recreated` artifact recipe từ public code/data, không gọi là official checkpoint.
-  - Tái tạo T5 AST/prefix compiler từ `dataset/AST/demonstrations.json` hoặc ít nhất tạo training/export skeleton có provenance rõ.
-  - Xác định/tạo post-judgment classifier dataset từ public WMDP/TOFU outputs nếu khả thi; nếu không đủ label, ghi blocker cụ thể.
-  - Harden output logging/parsing để lưu raw answer khi parse A/B/C/D fail, vì `composite/bio` smoke có valid rate `0.5`.
-  - Xuất artifact manifest gồm source data, training config, checkpoint paths, và env vars cần set cho run tiếp theo.
+- Download hoặc lưu thành Kaggle output toàn bộ thư mục `/kaggle/working/paper_port_recreated_artifacts_bootstrap`, vì notebook local chỉ giữ log/output, không giữ checkpoint và dataset sinh trong Kaggle working dir.
+- Tạo notebook tiếp theo để thêm explicit `PORT_ARTIFACT_MODE=recreated` support hoặc wrapper tương đương.
+- Train classifier head tương thích với pipeline hiện tại, hoặc patch pipeline dùng recreated lightweight classifier với provenance ghi rõ.
+- Chạy recreated-artifact smoke matrix trước khi chạy full dataset.
 
-Không chạy full PoRT paper dataset khi vẫn ở `PORT_ARTIFACT_MODE=smoke`.
+Không chạy full PoRT paper dataset khi classifier head vẫn `UNRESOLVED_RECREATED_CLASSIFIER_BASE_MODEL` / `UNRESOLVED_RECREATED_CLASSIFIER_HEAD_CKPT`.
