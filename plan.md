@@ -43,6 +43,7 @@ Definition of done cho full reproduction:
 | `notebooks/paper_baselines/11_kaggle_paper_baseline_wmdp_full_no_defense.ipynb` | Full paper baseline/no-defense trên `original`, `noise_prefix`, `composite` | Đã pass trên Kaggle | `11004` rows; no errors; prompt source đúng cho cả 3 variants |
 | `notebooks/smoke_tests/12_kaggle_paper_port_pipeline_smoke_test.ipynb` | PoRT paper pipeline smoke test vài sample | Đã pass trên Kaggle ở smoke mode | `composite/bio`, `2` rows, prompt source `full_question`, rethink `2/2`, valid predictions `1.0`; không phải paper metric vì dùng smoke post-judge |
 | `notebooks/smoke_tests/13_kaggle_paper_port_pipeline_smoke_matrix.ipynb` | PoRT smoke matrix đủ variant/domain | Đã pass trên Kaggle ở smoke mode | `9` jobs, `18` rows; prompt source đúng; rethink `18/18`; valid rate `1.0` ở 8/9 jobs, `composite/bio=0.5`; không phải paper metric |
+| `notebooks/smoke_tests/15_kaggle_paper_port_official_artifact_probe.ipynb` | Probe official PoRT artifacts | Đã pass trên Kaggle | Không tìm thấy public T5/classifier checkpoint; env artifact chưa set; `PORT_ARTIFACT_MODE=official` chưa chạy được |
 
 ### Kết quả notebook 11 mới nhất
 
@@ -113,6 +114,28 @@ Tổng cộng:
 - Smoke matrix đã chứng minh control flow chạy qua toàn bộ bề mặt WMDP variant/domain.
 - Accuracy trong smoke mode không dùng để so sánh paper.
 - `composite/bio` có `valid_predictions_rate=0.5`, nên trước khi chạy official artifacts cần harden extraction/generation logging để không mất sample vì output không parse được A/B/C/D.
+
+### Kết quả notebook 15 mới nhất
+
+Notebook `15` đã chạy official artifact probe trên Kaggle ở commit `6812592c3df8f763ba93da911e1a68e4e92d7e48`.
+
+Kết quả theo nguồn:
+
+- Official GitHub repo `ChnIRuI/PoRT_LLM_Unlearning`: truy cập được, `0` releases, `0` tags, `119` files; không có strong checkpoint candidate.
+- OpenReview supplement `GBTUVO9vkj`: tải được zip `21,254,743` bytes, SHA256 `ec4f23ae73de4ea52db82921795cb41370363bc1a544650e32bb1d52347465b4`, `331` entries; chứa code/data, không có model weight/checkpoint.
+- Hugging Face search: chỉ thấy `ChnIRuI/tofu_Llama-2-7b-chat-hf_forget01_GradAscent`, không phải PoRT T5/compiler/classifier artifact.
+- Env vars artifact đều unset:
+  - `PORT_T5_MODEL_PATH` / `PORT_T5_MODEL_HF_REPO` / `PORT_T5_MODEL_URL`
+  - `PORT_CLASSIFIER_BASE_MODEL`
+  - `PORT_CLASSIFIER_HEAD_CKPT` / `PORT_CLASSIFIER_HEAD_URL`
+
+Kết luận probe:
+
+- `official_env_complete=false`.
+- `public_checkpoint_found=false`.
+- `can_run_port_official_mode_now=false`.
+- `can_claim_paper_checkpoint_reproduction=false`.
+- Recommendation: recreate T5/classifier artifacts from public code/data and label them as recreated, not official.
 
 ## Phân tích trạng thái hiện tại
 
@@ -224,6 +247,7 @@ Hiện trạng:
 
 - Repo chính thức và OpenReview supplement có code/data nhưng chưa thấy public checkpoint T5/classifier.
 - Smoke mode chỉ kiểm chứng control flow, không chứng minh metric paper-faithful.
+- Notebook `15` xác nhận không thể chạy `PORT_ARTIFACT_MODE=official` nếu không có artifact từ tác giả hoặc artifact do mình tái tạo.
 
 ### Bước 5: PoRT paper full dataset
 
@@ -268,16 +292,16 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Resolve official PoRT artifacts, chưa chạy full PoRT paper dataset.
+Tạo nhánh recreated-artifacts, chưa chạy full PoRT paper dataset.
 
 Việc cần làm ngay:
 
-- Tạo notebook/script audit artifact chính thức, dự kiến `notebooks/smoke_tests/14_kaggle_paper_port_official_artifact_probe.ipynb`.
-- Kiểm tra lại official repo, OpenReview supplement, Hugging Face, và Kaggle model refs để xác nhận có/không có public checkpoint cho:
-  - T5 AST/prefix compiler.
-  - Post-judgment classifier base model.
-  - Classifier head checkpoint.
-- Nếu không có public checkpoint, chuyển sang tái tạo artifact từ public code/data với recipe rõ ràng, nhưng đánh dấu là recreated artifact chứ không phải official checkpoint.
-- Harden notebook `13`/runtime output logging để lưu raw generated answer khi parse A/B/C/D fail, vì `composite/bio` smoke có valid rate `0.5`.
+- Tạo notebook mới dự kiến `notebooks/smoke_tests/16_kaggle_paper_port_recreated_artifacts_bootstrap.ipynb`.
+- Mục tiêu notebook `16`:
+  - Tạo `recreated` artifact recipe từ public code/data, không gọi là official checkpoint.
+  - Tái tạo T5 AST/prefix compiler từ `dataset/AST/demonstrations.json` hoặc ít nhất tạo training/export skeleton có provenance rõ.
+  - Xác định/tạo post-judgment classifier dataset từ public WMDP/TOFU outputs nếu khả thi; nếu không đủ label, ghi blocker cụ thể.
+  - Harden output logging/parsing để lưu raw answer khi parse A/B/C/D fail, vì `composite/bio` smoke có valid rate `0.5`.
+  - Xuất artifact manifest gồm source data, training config, checkpoint paths, và env vars cần set cho run tiếp theo.
 
 Không chạy full PoRT paper dataset khi vẫn ở `PORT_ARTIFACT_MODE=smoke`.
