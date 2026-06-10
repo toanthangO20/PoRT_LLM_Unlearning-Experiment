@@ -45,7 +45,24 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/13_kaggle_paper_port_pipeline_smoke_matrix.ipynb` | PoRT smoke matrix đủ variant/domain | Đã pass trên Kaggle ở smoke mode | `9` jobs, `18` rows; prompt source đúng; rethink `18/18`; valid rate `1.0` ở 8/9 jobs, `composite/bio=0.5`; không phải paper metric |
 | `notebooks/smoke_tests/15_kaggle_paper_port_official_artifact_probe.ipynb` | Probe official PoRT artifacts | Đã pass trên Kaggle | Không tìm thấy public T5/classifier checkpoint; env artifact chưa set; `PORT_ARTIFACT_MODE=official` chưa chạy được |
 | `notebooks/artifact_bootstrap/16_kaggle_paper_port_recreated_artifacts_bootstrap.ipynb` | Bootstrap recreated PoRT artifacts | Đã pass trên Kaggle | Không phải smoke test; tạo được T5 recreated checkpoint/dataset và weak classifier dataset; classifier head vẫn unresolved |
-| `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb` | PoRT recreated-artifact smoke matrix | Đã tạo, chờ chạy Kaggle | Smoke test đúng nghĩa: vài sample, dùng recreated T5 + weak learned TF-IDF/logistic post-judge, chưa phải full paper metric |
+| `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb` | PoRT recreated-artifact smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows, valid rate `1.0`; classifier weak test acc `0.2155`; rethink `18/18`, nên chưa đủ để full run |
+
+### Kết quả notebook 17 mới nhất
+
+Notebook `17` đã chạy xong trên Kaggle ở commit `b939afadeb84e3bdd2f167c03f0f32b2e4062e90`, không lỗi cell:
+
+- Mode: `PORT_ARTIFACT_MODE=recreated`.
+- Artifact source: `bootstrapped_in_notebook_17`; notebook không dùng zip artifact từ notebook `16` vì các env `PORT_RECREATED_ARTIFACT_*` đều unset.
+- T5 recreated train lại `3` epochs từ `google/flan-t5-small`; loss giảm từ train/eval `9.509/9.323` xuống `9.012/8.833`.
+- Weak TF-IDF/logistic post-judge:
+  - train acc `0.7199`, macro F1 `0.7198`.
+  - eval acc `0.2087`, macro F1 `0.2065`.
+  - test acc `0.2155`, macro F1 `0.2150`.
+- Smoke matrix: `9` jobs x `2` rows = `18` rows; `valid_predictions_rate=1.0` cho toàn bộ variant/domain.
+- Rethink rate: `1.0` cho toàn bộ jobs (`18/18`), tức gate vẫn đang gần như always-rethink.
+- Overall smoke accuracy: `3/18 = 0.1667`; giá trị này chỉ để quan sát, chưa phải metric paper.
+
+Kết luận: notebook `17` pass về mặt plumbing/control-flow của recreated mode, nhưng post-judge classifier hiện không đủ chất lượng. Không chạy full recreated PoRT dataset cho tới khi gate classifier tốt hơn và không còn always-rethink.
 
 ### Kết quả notebook 16 mới nhất
 
@@ -307,13 +324,11 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Chạy notebook `17` trên Kaggle, chưa chạy full PoRT paper dataset.
+Không chạy full PoRT paper dataset ở trạng thái hiện tại.
 
 Việc cần làm ngay:
 
-- Chạy `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb`.
-- Notebook `17` sẽ ưu tiên dùng recreated artifact từ `PORT_RECREATED_ARTIFACT_DIR`, `PORT_RECREATED_ARTIFACT_ZIP_URL`, `PORT_RECREATED_ARTIFACT_ZIP_PATH`, hoặc zip tìm thấy trong `/kaggle/working` / `/kaggle/input`.
-- Nếu không có artifact zip/path, notebook `17` tự bootstrap recreated artifacts từ public repo data để vẫn chạy được trên Kaggle sạch.
-- Notebook `17` train weak TF-IDF/logistic post-judge classifier từ dataset notebook `16`, patch runtime pipeline sang `PORT_ARTIFACT_MODE=recreated`, rồi chạy matrix vài sample trên `original + noise_prefix + composite`.
-
-Không chạy full PoRT paper dataset cho tới khi notebook `17` pass và ta đọc lại classifier quality + valid/rethink rate.
+- Tạo notebook tiếp theo để chẩn đoán và cải thiện recreated post-judge classifier trước.
+- Mục tiêu tối thiểu: classifier held-out acc/F1 phải vượt random rõ ràng, và smoke matrix không còn `rethink_rate=1.0` trên mọi job.
+- So sánh ít nhất 2 hướng classifier: TF-IDF/logistic hiện tại với split/grouping chặt hơn, và một transformer classifier nhỏ fine-tune trên weak proxy labels.
+- Sau khi classifier pass smoke, mới tạo full recreated PoRT run; vẫn ghi rõ đây là recreated artifact path, không phải official paper checkpoint.
