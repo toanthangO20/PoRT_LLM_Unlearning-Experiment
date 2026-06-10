@@ -42,6 +42,7 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/10_kaggle_paper_baseline_wmdp_smoke_test.ipynb` | Paper baseline/no-defense smoke trên `original`, `noise_prefix`, `composite` | Đã pass sau khi dùng `full_question` | Dùng để xác nhận prompt adversarial trước full baseline |
 | `notebooks/paper_baselines/11_kaggle_paper_baseline_wmdp_full_no_defense.ipynb` | Full paper baseline/no-defense trên `original`, `noise_prefix`, `composite` | Đã pass trên Kaggle | `11004` rows; no errors; prompt source đúng cho cả 3 variants |
 | `notebooks/smoke_tests/12_kaggle_paper_port_pipeline_smoke_test.ipynb` | PoRT paper pipeline smoke test vài sample | Đã pass trên Kaggle ở smoke mode | `composite/bio`, `2` rows, prompt source `full_question`, rethink `2/2`, valid predictions `1.0`; không phải paper metric vì dùng smoke post-judge |
+| `notebooks/smoke_tests/13_kaggle_paper_port_pipeline_smoke_matrix.ipynb` | PoRT smoke matrix đủ variant/domain | Đã pass trên Kaggle ở smoke mode | `9` jobs, `18` rows; prompt source đúng; rethink `18/18`; valid rate `1.0` ở 8/9 jobs, `composite/bio=0.5`; không phải paper metric |
 
 ### Kết quả notebook 11 mới nhất
 
@@ -69,6 +70,49 @@ Theo domain:
 | `composite` | 0.340141 | 0.240196 | 0.262204 |
 
 Runtime Kaggle ghi nhận: model load khoảng `17.69s`, eval khoảng `26.2` phút.
+
+### Kết quả notebook 13 mới nhất
+
+Notebook `13` đã chạy full smoke matrix trên Kaggle ở commit `6812592c3df8f763ba93da911e1a68e4e92d7e48`.
+
+Config:
+
+- `PORT_ARTIFACT_MODE=smoke`.
+- Target model: `microsoft/phi-1_5`, dtype `float16`.
+- T5 smoke model: `google/flan-t5-small`.
+- Classifier: `smoke-posthoc-classifier`.
+- Variants: `original`, `noise_prefix`, `composite`.
+- Domains: `bio`, `chem`, `cyber`.
+- `max_samples=2`, `batch_size=1`.
+- Token limits: prefix prompt `1024`, prefix generation `128`, answer prompt `1536`, answer generation `32`.
+
+Kết quả:
+
+| Variant | Domain | Rows | Prompt source | Valid rate | Rethink rate | Runtime |
+| --- | --- | ---: | --- | ---: | ---: | ---: |
+| `original` | `bio` | 2 | `question_plus_choices` | 1.0 | 1.0 | 12.65s |
+| `original` | `chem` | 2 | `question_plus_choices` | 1.0 | 1.0 | 9.93s |
+| `original` | `cyber` | 2 | `question_plus_choices` | 1.0 | 1.0 | 10.74s |
+| `noise_prefix` | `bio` | 2 | `full_question` | 1.0 | 1.0 | 21.58s |
+| `noise_prefix` | `chem` | 2 | `full_question` | 1.0 | 1.0 | 24.01s |
+| `noise_prefix` | `cyber` | 2 | `full_question` | 1.0 | 1.0 | 16.29s |
+| `composite` | `bio` | 2 | `full_question` | 0.5 | 1.0 | 9.96s |
+| `composite` | `chem` | 2 | `full_question` | 1.0 | 1.0 | 9.91s |
+| `composite` | `cyber` | 2 | `full_question` | 1.0 | 1.0 | 10.10s |
+
+Tổng cộng:
+
+- Jobs: `9`.
+- Rows: `18`.
+- Model load: `29.05s`.
+- Không có cell error.
+- Artifacts root: `/kaggle/working/paper_port_wmdp_smoke_matrix_phi-1_5`.
+
+Điểm cần lưu ý:
+
+- Smoke matrix đã chứng minh control flow chạy qua toàn bộ bề mặt WMDP variant/domain.
+- Accuracy trong smoke mode không dùng để so sánh paper.
+- `composite/bio` có `valid_predictions_rate=0.5`, nên trước khi chạy official artifacts cần harden extraction/generation logging để không mất sample vì output không parse được A/B/C/D.
 
 ## Phân tích trạng thái hiện tại
 
@@ -149,7 +193,7 @@ Tiêu chí pass:
 
 ### Bước 3: PoRT smoke matrix đủ domain/variant
 
-Trạng thái: **Next action**.
+Trạng thái: **Hoàn tất ở smoke mode**.
 
 Mục tiêu:
 
@@ -166,7 +210,7 @@ Tiêu chí pass:
 
 ### Bước 4: Resolve official PoRT artifacts
 
-Trạng thái: **Chờ Bước 3 pass**.
+Trạng thái: **Next action**.
 
 Mục tiêu:
 
@@ -224,16 +268,16 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Tạo notebook matrix tiếp theo:
+Resolve official PoRT artifacts, chưa chạy full PoRT paper dataset.
 
-`notebooks/smoke_tests/13_kaggle_paper_port_pipeline_smoke_matrix.ipynb`
+Việc cần làm ngay:
 
-Mục tiêu notebook `13`:
+- Tạo notebook/script audit artifact chính thức, dự kiến `notebooks/smoke_tests/14_kaggle_paper_port_official_artifact_probe.ipynb`.
+- Kiểm tra lại official repo, OpenReview supplement, Hugging Face, và Kaggle model refs để xác nhận có/không có public checkpoint cho:
+  - T5 AST/prefix compiler.
+  - Post-judgment classifier base model.
+  - Classifier head checkpoint.
+- Nếu không có public checkpoint, chuyển sang tái tạo artifact từ public code/data với recipe rõ ràng, nhưng đánh dấu là recreated artifact chứ không phải official checkpoint.
+- Harden notebook `13`/runtime output logging để lưu raw generated answer khi parse A/B/C/D fail, vì `composite/bio` smoke có valid rate `0.5`.
 
-- Reuse logic đã pass của notebook `12`.
-- Chạy `PORT_ARTIFACT_MODE=smoke`.
-- Loop qua `original`, `noise_prefix`, `composite` và `bio`, `chem`, `cyber`.
-- Giữ `max_samples=2`, `batch_size=1`.
-- Ghi summary theo `variant/domain`: rows, prompt source, valid rate, rethink rate, runtime, artifact paths.
-
-Không chạy full PoRT paper dataset sau notebook `12` vì kết quả hiện tại chỉ là smoke control flow. Sau notebook `13`, bước cần quyết định tiếp là tìm/tái tạo official T5/classifier artifacts và chạy lại ở `PORT_ARTIFACT_MODE=official`.
+Không chạy full PoRT paper dataset khi vẫn ở `PORT_ARTIFACT_MODE=smoke`.
