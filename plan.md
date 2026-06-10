@@ -45,6 +45,7 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/13_kaggle_paper_port_pipeline_smoke_matrix.ipynb` | PoRT smoke matrix đủ variant/domain | Đã pass trên Kaggle ở smoke mode | `9` jobs, `18` rows; prompt source đúng; rethink `18/18`; valid rate `1.0` ở 8/9 jobs, `composite/bio=0.5`; không phải paper metric |
 | `notebooks/smoke_tests/15_kaggle_paper_port_official_artifact_probe.ipynb` | Probe official PoRT artifacts | Đã pass trên Kaggle | Không tìm thấy public T5/classifier checkpoint; env artifact chưa set; `PORT_ARTIFACT_MODE=official` chưa chạy được |
 | `notebooks/artifact_bootstrap/16_kaggle_paper_port_recreated_artifacts_bootstrap.ipynb` | Bootstrap recreated PoRT artifacts | Đã pass trên Kaggle | Không phải smoke test; tạo được T5 recreated checkpoint/dataset và weak classifier dataset; classifier head vẫn unresolved |
+| `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb` | PoRT recreated-artifact smoke matrix | Đã tạo, chờ chạy Kaggle | Smoke test đúng nghĩa: vài sample, dùng recreated T5 + weak learned TF-IDF/logistic post-judge, chưa phải full paper metric |
 
 ### Kết quả notebook 16 mới nhất
 
@@ -306,13 +307,13 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Chuẩn bị dùng artifact recreated của notebook `16`, chưa chạy full PoRT paper dataset.
+Chạy notebook `17` trên Kaggle, chưa chạy full PoRT paper dataset.
 
 Việc cần làm ngay:
 
-- Download hoặc lưu thành Kaggle output toàn bộ thư mục `/kaggle/working/paper_port_recreated_artifacts_bootstrap`, vì notebook local chỉ giữ log/output, không giữ checkpoint và dataset sinh trong Kaggle working dir.
-- Tạo notebook tiếp theo để thêm explicit `PORT_ARTIFACT_MODE=recreated` support hoặc wrapper tương đương.
-- Train classifier head tương thích với pipeline hiện tại, hoặc patch pipeline dùng recreated lightweight classifier với provenance ghi rõ.
-- Chạy recreated-artifact smoke matrix trước khi chạy full dataset.
+- Chạy `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb`.
+- Notebook `17` sẽ ưu tiên dùng recreated artifact từ `PORT_RECREATED_ARTIFACT_DIR`, `PORT_RECREATED_ARTIFACT_ZIP_URL`, `PORT_RECREATED_ARTIFACT_ZIP_PATH`, hoặc zip tìm thấy trong `/kaggle/working` / `/kaggle/input`.
+- Nếu không có artifact zip/path, notebook `17` tự bootstrap recreated artifacts từ public repo data để vẫn chạy được trên Kaggle sạch.
+- Notebook `17` train weak TF-IDF/logistic post-judge classifier từ dataset notebook `16`, patch runtime pipeline sang `PORT_ARTIFACT_MODE=recreated`, rồi chạy matrix vài sample trên `original + noise_prefix + composite`.
 
-Không chạy full PoRT paper dataset khi classifier head vẫn `UNRESOLVED_RECREATED_CLASSIFIER_BASE_MODEL` / `UNRESOLVED_RECREATED_CLASSIFIER_HEAD_CKPT`.
+Không chạy full PoRT paper dataset cho tới khi notebook `17` pass và ta đọc lại classifier quality + valid/rethink rate.

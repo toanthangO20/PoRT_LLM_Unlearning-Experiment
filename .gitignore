@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+
+results/
+artifacts/
+*.zip
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+
+.ipynb_checkpoints/
