@@ -22,11 +22,20 @@ class WMDP(BaseDataset):
     eval_prompt_key = "prompt"
     eval_answer_key = "choices"
 
-    def __init__(self, parquet_path=None, dataset_path=None, sample_size=None):
+    def __init__(
+        self,
+        parquet_path=None,
+        dataset_path=None,
+        sample_size=None,
+        question_key="question",
+        question_is_formatted=False,
+    ):
         super().__init__()
         self.parquet_path = Path(parquet_path) if parquet_path else None
         self.dataset_path = Path(dataset_path) if dataset_path else None
         self.sample_size = sample_size
+        self.question_key = question_key
+        self.question_is_formatted = question_is_formatted
 
     def _default_parquet_path(self):
         if self.subject is None:
@@ -98,19 +107,40 @@ class WMDP(BaseDataset):
             raise KeyError(f"WMDP split '{split_name}' not found; available: {list(self.dataset.keys())}")
 
         dataset = self.dataset[split_name]
+        if self.question_key not in dataset.column_names:
+            raise KeyError(
+                f"WMDP question key '{self.question_key}' not found; "
+                f"available columns: {dataset.column_names}"
+            )
         dataset = dataset.map(
             lambda x: {
                 "choice_text": self.normalize_choices(x["choices"]),
                 "correct_answer": int(x["answer"]),
-            }
+            },
+            load_from_cache_file=False,
         )
-        dataset = dataset.map(
-            lambda x: {
-                "prompt": prompt_prefix
-                + self.format_prompt(x["question"], x["choice_text"], self.choice_labels, self.subject),
-                "choices": self.choice_labels,
-            }
-        )
+        if self.question_is_formatted:
+            dataset = dataset.map(
+                lambda x: {
+                    "prompt": prompt_prefix + str(x[self.question_key]),
+                    "choices": self.choice_labels,
+                },
+                load_from_cache_file=False,
+            )
+        else:
+            dataset = dataset.map(
+                lambda x: {
+                    "prompt": prompt_prefix
+                    + self.format_prompt(
+                        x[self.question_key],
+                        x["choice_text"],
+                        self.choice_labels,
+                        self.subject,
+                    ),
+                    "choices": self.choice_labels,
+                },
+                load_from_cache_file=False,
+            )
         keep_columns = set(self.keys)
         remove_columns = [column for column in dataset.column_names if column not in keep_columns]
         if remove_columns:

@@ -39,23 +39,24 @@ Definition of done cho bước "full pipeline":
 | `notebooks/smoke_tests/06_kaggle_wmdp_target_model_corrupt_hook_full_gpu.ipynb` | Full WMDP corruption hook không dùng classifier | Đã pass | T4 x2; full `3668` rows mỗi run; baseline overall `0.394766`; `zero_out_first_n` overall `0.246183` với bio `0.245090`, chem `0.235294`, cyber `0.249119`; `flip_sign_first_n` overall `0.241821` với bio `0.239592`, chem `0.267157`, cyber `0.238047` |
 | `notebooks/smoke_tests/08_kaggle_wmdp_classifier_gated_mini_gpu.ipynb` | Mini test classifier-gated PoRT qua script canonical, WMDP `sample_size=2`, `zero_out_first_n` | Đã chuẩn bị, chờ artifact classifier | Notebook tự resolve/validate `WMDP_CLASSIFIER_PATH`, load thử `PromptClassifier`, chạy script không dùng `--attack_all_prompts`, rồi assert `attack_stats.csv` |
 | `notebooks/smoke_tests/09_kaggle_wmdp_classifier_gated_multi_config_mini_gpu.ipynb` | Mini test classifier-gated PoRT với nhiều corrupt configs | Đã tạo, chờ Kaggle pass/fail | Reuse classifier flow từ notebook `08`, chạy tuần tự `zero_out`, `flip_sign`, `rand_noise_1`, `rand_noise_full`, rồi ghi aggregate summary/attack stats |
-| `notebooks/smoke_tests/10_kaggle_paper_baseline_wmdp_smoke_test.ipynb` | Paper baseline/no-defense WMDP smoke test vài sample trên `original`, `noise_prefix`, `composite` | Đã pass Kaggle | Full control path chạy thật với `18/18` rows; overall acc `0.166667`; artifacts ghi đủ; không dùng PoRT/classifier/corruption |
-| `notebooks/paper_baselines/11_kaggle_paper_baseline_wmdp_full_no_defense.ipynb` | Full paper baseline/no-defense trên `original`, `noise_prefix`, `composite` | Đã tạo, chờ chạy Kaggle | Mặc định full dataset, expected `11004` rows; có partial artifacts sau từng `variant/domain` |
+| `notebooks/smoke_tests/10_kaggle_paper_baseline_wmdp_smoke_test.ipynb` | Paper baseline/no-defense WMDP smoke test vài sample trên `original`, `noise_prefix`, `composite` | Đã sửa, cần rerun | Adversarial variants giờ dùng `full_question`; output cũ đã clear vì lần chạy trước dùng nhầm `question` cho mọi variant |
+| `notebooks/paper_baselines/11_kaggle_paper_baseline_wmdp_full_no_defense.ipynb` | Full paper baseline/no-defense trên `original`, `noise_prefix`, `composite` | Đã sửa, cần rerun Kaggle | Mặc định full dataset, expected `11004` rows; adversarial variants giờ dùng `full_question`; có partial artifacts sau từng `variant/domain` |
 
 ## Phân tích trạng thái hiện tại
 
-Baseline target-model full WMDP no-corrupt đã đủ tin cậy để làm mốc so sánh nội bộ. Notebook `10` đã xác nhận paper baseline/no-defense smoke pass trên đúng các biến thể WMDP mà repo paper cung cấp (`original`, `noise_prefix`, `composite`). Các notebook corruption hook và classifier-gated trước đó vẫn là nhánh engineering/adapted, chưa phải reproduction paper gốc.
+Baseline target-model full WMDP no-corrupt đã đủ tin cậy để làm mốc so sánh nội bộ. Lần chạy notebook `11` trước đó pass về row count nhưng không paper-faithful cho `noise_prefix` và `composite`, vì WMDP eval đang dùng cột `question` thay vì prompt adversarial `full_question`. Code dataset và notebook `10`/`11` đã được sửa để adversarial variants dùng `full_question` như prompt hoàn chỉnh. Các notebook corruption hook và classifier-gated trước đó vẫn là nhánh engineering/adapted, chưa phải reproduction paper gốc.
 
 Điểm chưa hoàn tất:
 
-- Chưa chạy notebook `11` trên Kaggle để lấy full paper baseline/no-defense cho cả `original + noise_prefix + composite`.
+- Chưa rerun notebook `10`/`11` trên Kaggle sau khi sửa `full_question`.
+- Lần chạy full notebook `11` cũ chỉ xác nhận `original` baseline; kết quả `noise_prefix`/`composite` cũ không dùng được.
 - Chưa smoke test pipeline PoRT paper-faithful; classifier-gated/corrupt-hook 08/09 chỉ nên xem là thử nghiệm phụ cho tới khi paper baseline full pass.
 
 ## Kế hoạch triển khai tiếp theo
 
 ### Bước 1: Chạy full paper baseline/no-defense
 
-Trạng thái: **Đã tạo notebook, chờ chạy Kaggle**.
+Trạng thái: **Đã sửa prompt source, chờ rerun Kaggle**.
 
 Notebook:
 
@@ -73,6 +74,8 @@ Tiêu chí pass:
 - Không có runtime error.
 - Tổng row mặc định là `11004`.
 - Mỗi variant có `3668` rows.
+- Log build dataset cho `original` phải là `question_key=question formatted=False`.
+- Log build dataset cho `noise_prefix` và `composite` phải là `question_key=full_question formatted=True`.
 - Có đủ `predictions.csv`, `summary_by_variant_domain.csv`, `summary_by_variant.csv`, `summary_overall.csv`, `completed_jobs.csv`, `summary.json`, `run_config.json`.
 - Kết quả `original` khớp gần baseline full đã có: overall khoảng `0.394766`, bio `0.523959`, chem `0.335784`, cyber `0.324107`.
 
@@ -174,11 +177,13 @@ Tài liệu cần tạo sau full runs:
 
 ## Next immediate action
 
-Chạy full paper baseline/no-defense trên Kaggle:
+Rerun paper baseline/no-defense sau fix `full_question`:
 
-- Chạy `notebooks/paper_baselines/11_kaggle_paper_baseline_wmdp_full_no_defense.ipynb` từ một Kaggle session sạch.
+- Chạy nhanh `notebooks/smoke_tests/10_kaggle_paper_baseline_wmdp_smoke_test.ipynb` trước để xác nhận `noise_prefix`/`composite` không còn cho kết quả y hệt `original`.
+- Sau đó chạy `notebooks/paper_baselines/11_kaggle_paper_baseline_wmdp_full_no_defense.ipynb` từ một Kaggle session sạch.
 - Giữ mặc định `PORT_WMDP_SAMPLE_SIZE` unset để chạy full.
 - Giữ mặc định `PORT_WMDP_BASELINE_VARIANTS=original,noise_prefix,composite` và `PORT_WMDP_DOMAINS=bio,chem,cyber`.
 - Xác nhận tổng rows là `11004`.
+- Xác nhận log prompt source: `original` dùng `question`, `noise_prefix` và `composite` dùng `full_question`.
 - Nếu notebook `11` pass, next action là tạo `12_kaggle_paper_port_pipeline_smoke_test.ipynb`.
 - Nếu notebook `11` fail, sửa data path/model config/evaluator trước khi đụng đến PoRT full.
