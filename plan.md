@@ -46,6 +46,7 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/15_kaggle_paper_port_official_artifact_probe.ipynb` | Probe official PoRT artifacts | Đã pass trên Kaggle | Không tìm thấy public T5/classifier checkpoint; env artifact chưa set; `PORT_ARTIFACT_MODE=official` chưa chạy được |
 | `notebooks/artifact_bootstrap/16_kaggle_paper_port_recreated_artifacts_bootstrap.ipynb` | Bootstrap recreated PoRT artifacts | Đã pass trên Kaggle | Không phải smoke test; tạo được T5 recreated checkpoint/dataset và weak classifier dataset; classifier head vẫn unresolved |
 | `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb` | PoRT recreated-artifact smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows, valid rate `1.0`; classifier weak test acc `0.2155`; rethink `18/18`, nên chưa đủ để full run |
+| `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb` | Recreated post-judge classifier diagnostics | Đã tạo, chờ chạy Kaggle | Không chạy full PoRT; đo label/split leakage, TF-IDF feature ablations, calibration và khuyến nghị next classifier path |
 
 ### Kết quả notebook 17 mới nhất
 
@@ -328,7 +329,8 @@ Không chạy full PoRT paper dataset ở trạng thái hiện tại.
 
 Việc cần làm ngay:
 
-- Tạo notebook tiếp theo để chẩn đoán và cải thiện recreated post-judge classifier trước.
-- Mục tiêu tối thiểu: classifier held-out acc/F1 phải vượt random rõ ràng, và smoke matrix không còn `rethink_rate=1.0` trên mọi job.
-- So sánh ít nhất 2 hướng classifier: TF-IDF/logistic hiện tại với split/grouping chặt hơn, và một transformer classifier nhỏ fine-tune trên weak proxy labels.
-- Sau khi classifier pass smoke, mới tạo full recreated PoRT run; vẫn ghi rõ đây là recreated artifact path, không phải official paper checkpoint.
+- Chạy `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb`.
+- Notebook `18` không load target LLM và không chạy full PoRT; nó chỉ chẩn đoán post-judge classifier recreated.
+- Kỳ vọng đầu ra: `summary.json`, `tfidf_diagnostic_results.csv/json`, best held-out classifier, overlap report, calibration/confidence bins và recommendation.
+- Nếu best held-out acc/macro-F1 vẫn thấp, quay lại label scheme thay vì scale full PoRT.
+- Nếu classifier diagnostic vượt random rõ ràng, tạo notebook smoke matrix kế tiếp dùng classifier tốt nhất trước khi full run.
