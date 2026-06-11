@@ -48,7 +48,7 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb` | PoRT recreated-artifact smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows, valid rate `1.0`; classifier weak test acc `0.2155`; rethink `18/18`, nên chưa đủ để full run |
 | `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb` | Recreated post-judge classifier diagnostics | Đã pass trên Kaggle | `9216` rows rebuilt; group split no leakage; best TF-IDF `answer_only` test acc `0.9286`, macro F1 `0.9074`; next là smoke matrix với answer expansion |
 | `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb` | PoRT recreated best-classifier smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows; valid rate `1.0`; rethink `10/18`; classifier test acc `0.9286`; vẫn là recreated smoke, không phải official paper metric |
-| `notebooks/recreated_runs/20_kaggle_paper_port_recreated_scale_run.ipynb` | PoRT recreated best-classifier scale run | Đã tạo, chờ chạy Kaggle | Không phải smoke test; default `PORT_MAX_SAMPLES=32` mỗi job; có resume/partial summary; dùng classifier và answer expansion của notebook `19`; có thể chuyển full bằng `PORT_MAX_SAMPLES=-1` |
+| `notebooks/recreated_runs/20_kaggle_paper_port_recreated_scale_run.ipynb` | PoRT recreated best-classifier scale run | Đã pass trên Kaggle | Không phải smoke test; `288` rows (`32`/job), valid rate `0.9931`, rethink `0.6771`, overall acc `0.2222`; dùng classifier và answer expansion của notebook `19`; vẫn là recreated, không phải official metric |
 
 ### Kết quả notebook 19 mới nhất
 
@@ -67,6 +67,24 @@ Notebook `19` đã chạy xong trên Kaggle ở commit `c71bc6294a76e23d414c3d0e
 - Smoke accuracy: `3/18 = 0.1667`; chỉ để quan sát vì sample quá nhỏ và không phải paper metric.
 
 Kết luận: recreated PoRT plumbing đã qua smoke với classifier gate không còn degenerate. Có thể chuyển sang bước scale recreated PoRT run, nhưng vẫn phải ghi rõ đây là recreated artifact path, không phải official paper checkpoint reproduction.
+
+### Kết quả notebook 20 mới nhất
+
+Notebook `20` đã chạy xong trên Kaggle ở commit `c51a91213162e7f7f6ee1d059d842ef849b2dab6`, không lỗi cell:
+
+- Mode: `PORT_ARTIFACT_MODE=recreated`.
+- Row count mode: `first_32_per_job`.
+- Matrix: `9` jobs x `32` rows = `288` rows.
+- Artifact source: bootstrapped recreated T5/classifier artifacts trong run dir notebook `20`.
+- Classifier held-out test giữ nguyên tốt: accuracy `0.9286`, macro F1 `0.9074`.
+- Answer expansion trước post-judge: `true`.
+- Valid prediction rate tổng: `0.9931`; chỉ `noise_prefix/cyber` có `2/32` invalid predictions.
+- Rethink tổng: `195/288 = 0.6771`; không còn all-rethink nhưng gate vẫn khá aggressive.
+- Post-judge positive rate tổng: `0.2674`.
+- Overall accuracy: `64/288 = 0.2222`; thấp hơn full no-defense baseline notebook `11` (`0.3510`) và thấp hơn baseline full từng variant (`original=0.3948`, `noise_prefix=0.3713`, `composite=0.2868`), nên chưa có tín hiệu PoRT recreated cải thiện.
+- Runtime cell chính khoảng `36` phút wall-clock; tổng per-job runtime khoảng `29` phút, chậm nhất là `noise_prefix/cyber` khoảng `375s`.
+
+Kết luận: notebook `20` pass về mặt scale/pipeline và artifact logging, nhưng kết quả chất lượng chưa đủ tốt để chạy full recreated PoRT ngay nếu mục tiêu là so sánh nghiêm túc với baseline. Nút thắt hiện tại nhiều khả năng là recreated T5 prefix compiler/rerank/rethink path hoặc confidence threshold/gate, không phải lỗi missing artifact hay classifier luôn-rethink.
 
 ### Kết quả notebook 18 mới nhất
 
@@ -364,12 +382,11 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Chạy notebook `20` như một scale recreated PoRT run, vẫn không phải official paper checkpoint reproduction.
+Notebook `20` đã pass scale run, nhưng chất lượng recreated PoRT chưa đủ tốt để chạy full ngay.
 
 Việc cần làm ngay:
 
-- Commit/push notebook `20` và runner mới trước khi chạy Kaggle, vì notebook clone code từ GitHub remote.
-- Chạy notebook `20` với default `PORT_MAX_SAMPLES=32` mỗi job để xác nhận runtime, valid prediction rate, rethink distribution, và post-judge positive rate trên scale lớn hơn notebook `19`.
-- Nếu pass ổn định, chạy lại cùng notebook với `PORT_MAX_SAMPLES=64` hoặc `PORT_MAX_SAMPLES=-1` cho full selected datasets.
-- Dùng output `summary_by_variant_domain.csv`, `all_predictions.csv`, `failed_jobs.json`, và per-job `timing_stats.json` để quyết định có đủ ổn định để so với full baseline/no-defense notebook `11` hay không.
+- Đọc sâu `all_predictions.csv`/per-job generations của notebook `20` để phân loại lỗi: invalid answer parsing, prefix compiler sinh prompt xấu, rethink làm tụt accuracy, hay classifier gate trigger quá nhiều.
+- Tạo notebook kế tiếp cho diagnostics/ablation trên cùng `32` samples/job: so sánh direct initial answer vs final rethink answer, no-prefix vs compiled-prefix, và sweep `PORT_CLASSIFIER_CONF_THRESHOLD`.
+- Ưu tiên tìm cấu hình làm rethink giảm và accuracy không thấp hơn no-defense sample trước khi chạy `PORT_MAX_SAMPLES=-1`.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
