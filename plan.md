@@ -48,6 +48,7 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb` | PoRT recreated-artifact smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows, valid rate `1.0`; classifier weak test acc `0.2155`; rethink `18/18`, nên chưa đủ để full run |
 | `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb` | Recreated post-judge classifier diagnostics | Đã pass trên Kaggle | `9216` rows rebuilt; group split no leakage; best TF-IDF `answer_only` test acc `0.9286`, macro F1 `0.9074`; next là smoke matrix với answer expansion |
 | `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb` | PoRT recreated best-classifier smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows; valid rate `1.0`; rethink `10/18`; classifier test acc `0.9286`; vẫn là recreated smoke, không phải official paper metric |
+| `notebooks/recreated_runs/20_kaggle_paper_port_recreated_scale_run.ipynb` | PoRT recreated best-classifier scale run | Đã tạo, chờ chạy Kaggle | Không phải smoke test; default `PORT_MAX_SAMPLES=32` mỗi job; có resume/partial summary; dùng classifier và answer expansion của notebook `19`; có thể chuyển full bằng `PORT_MAX_SAMPLES=-1` |
 
 ### Kết quả notebook 19 mới nhất
 
@@ -363,12 +364,12 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Chuẩn bị scale recreated PoRT run sau khi notebook `19` pass smoke. Đây vẫn không phải official paper checkpoint reproduction.
+Chạy notebook `20` như một scale recreated PoRT run, vẫn không phải official paper checkpoint reproduction.
 
 Việc cần làm ngay:
 
-- Commit/push kết quả notebook `19`.
-- Tạo notebook kế tiếp cho recreated PoRT scale run dùng đúng classifier/answer-expansion của notebook `19`.
-- Runner mới cần hỗ trợ partial outputs, resume-safe summaries, timing per job, và env `PORT_MAX_SAMPLES` để chạy medium/full bằng cùng notebook.
-- Khuyến nghị default an toàn: chạy medium trước (`PORT_MAX_SAMPLES=32` hoặc `64` mỗi job) để xác nhận runtime/gate distribution; sau đó set full dataset nếu stable.
+- Commit/push notebook `20` và runner mới trước khi chạy Kaggle, vì notebook clone code từ GitHub remote.
+- Chạy notebook `20` với default `PORT_MAX_SAMPLES=32` mỗi job để xác nhận runtime, valid prediction rate, rethink distribution, và post-judge positive rate trên scale lớn hơn notebook `19`.
+- Nếu pass ổn định, chạy lại cùng notebook với `PORT_MAX_SAMPLES=64` hoặc `PORT_MAX_SAMPLES=-1` cho full selected datasets.
+- Dùng output `summary_by_variant_domain.csv`, `all_predictions.csv`, `failed_jobs.json`, và per-job `timing_stats.json` để quyết định có đủ ổn định để so với full baseline/no-defense notebook `11` hay không.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
