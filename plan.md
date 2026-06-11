@@ -46,7 +46,26 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/15_kaggle_paper_port_official_artifact_probe.ipynb` | Probe official PoRT artifacts | Đã pass trên Kaggle | Không tìm thấy public T5/classifier checkpoint; env artifact chưa set; `PORT_ARTIFACT_MODE=official` chưa chạy được |
 | `notebooks/artifact_bootstrap/16_kaggle_paper_port_recreated_artifacts_bootstrap.ipynb` | Bootstrap recreated PoRT artifacts | Đã pass trên Kaggle | Không phải smoke test; tạo được T5 recreated checkpoint/dataset và weak classifier dataset; classifier head vẫn unresolved |
 | `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb` | PoRT recreated-artifact smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows, valid rate `1.0`; classifier weak test acc `0.2155`; rethink `18/18`, nên chưa đủ để full run |
-| `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb` | Recreated post-judge classifier diagnostics | Đã tạo, chờ chạy Kaggle | Không chạy full PoRT; đo label/split leakage, TF-IDF feature ablations, calibration và khuyến nghị next classifier path |
+| `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb` | Recreated post-judge classifier diagnostics | Đã pass trên Kaggle | `9216` rows rebuilt; group split no leakage; best TF-IDF `answer_only` test acc `0.9286`, macro F1 `0.9074`; next là smoke matrix với answer expansion |
+
+### Kết quả notebook 18 mới nhất
+
+Notebook `18` đã chạy xong trên Kaggle ở commit `f3b7a75d85c8d588ee9b967ddf8523d5f5b81daf`, không lỗi cell:
+
+- Dataset source: rebuilt trực tiếp từ WMDP public data, không dùng zip artifact notebook `16`.
+- Rows: `9216`, gồm `2304` question groups.
+- Label counts: `6912` negative / `2304` positive vì mỗi câu có `1` correct answer và `3` wrong answers.
+- Random row split có leakage lớn theo question group (`train_test_group_overlap=796`), nên không dùng để đánh giá chính.
+- Group-by-question split không leakage (`0/0/0` group overlap).
+- Majority baseline trên group test: accuracy `0.75`, macro F1 `0.4286`.
+- Best held-out TF-IDF trên group test:
+  - feature set: `answer_only`.
+  - accuracy `0.9286`, macro F1 `0.9074`.
+  - positive precision `0.8287`, recall `0.9004`, F1 `0.8631`.
+  - ROC-AUC `0.9524`, AP `0.8967`.
+- Recommendation từ notebook: `consider_recreated_smoke_matrix_with_best_classifier`.
+
+Kết luận: weak classifier có thể học tín hiệu mạnh nếu được nhìn thấy nội dung đáp án. Nhưng best feature là `answer_only`, nên smoke matrix kế tiếp phải map output chữ cái `A/B/C/D` thành nội dung choice tương ứng trước khi đưa vào post-judge. Nếu chỉ classifier trên raw generated letter thì sẽ lặp lại lỗi notebook `17` và dễ thành always-rethink.
 
 ### Kết quả notebook 17 mới nhất
 
@@ -325,12 +344,13 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Không chạy full PoRT paper dataset ở trạng thái hiện tại.
+Tạo smoke matrix kế tiếp với best classifier từ notebook `18`, vẫn chưa chạy full PoRT paper dataset.
 
 Việc cần làm ngay:
 
-- Chạy `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb`.
-- Notebook `18` không load target LLM và không chạy full PoRT; nó chỉ chẩn đoán post-judge classifier recreated.
-- Kỳ vọng đầu ra: `summary.json`, `tfidf_diagnostic_results.csv/json`, best held-out classifier, overlap report, calibration/confidence bins và recommendation.
-- Nếu best held-out acc/macro-F1 vẫn thấp, quay lại label scheme thay vì scale full PoRT.
-- Nếu classifier diagnostic vượt random rõ ràng, tạo notebook smoke matrix kế tiếp dùng classifier tốt nhất trước khi full run.
+- Tạo notebook mới dự kiến `19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb`.
+- Rebuild classifier dataset như notebook `18`: `3` wrong answers per question, group-by-question split, best feature `answer_only`.
+- Train/export TF-IDF logistic best classifier và metadata.
+- Sửa smoke matrix runner để post-judge thấy expanded answer text, ví dụ generated `B` -> `B. <choice text>`, thay vì chỉ chữ `B`.
+- Chạy lại `9` jobs x `2` rows; tiêu chí pass: valid rate `1.0`, rethink rate không còn `1.0` ở mọi job, classifier confidence bins hợp lý.
+- Chỉ sau khi notebook `19` pass mới cân nhắc full recreated PoRT run.
