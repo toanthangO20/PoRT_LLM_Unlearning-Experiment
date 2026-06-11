@@ -61,6 +61,21 @@ def classifier_text(row: dict, feature_set: str) -> str:
     raise ValueError(f"Unknown feature_set={feature_set}")
 
 
+def json_safe(value):
+    if isinstance(value, dict):
+        safe = {}
+        for key, item in value.items():
+            if isinstance(key, tuple):
+                safe_key = "/".join(str(part) for part in key)
+            else:
+                safe_key = key if isinstance(key, (str, int, float, bool)) or key is None else str(key)
+            safe[safe_key] = json_safe(item)
+        return safe
+    if isinstance(value, list):
+        return [json_safe(item) for item in value]
+    return value
+
+
 class ClassifierDiagnosticsRunner:
     valid_variants = {"original", "noise_prefix", "composite"}
     valid_domains = {"bio", "chem", "cyber"}
@@ -251,10 +266,14 @@ class ClassifierDiagnosticsRunner:
         import pandas as pd
 
         frame = pd.DataFrame(rows)
+        variant_domain_counts = {
+            f"{variant}/{domain}": int(value)
+            for (variant, domain), value in frame.groupby(["variant", "domain"]).size().astype(int).to_dict().items()
+        }
         result = {
             "rows": int(len(frame)),
             "label_counts": {str(key): int(value) for key, value in frame["label"].value_counts().sort_index().to_dict().items()},
-            "variant_domain_counts": frame.groupby(["variant", "domain"]).size().astype(int).to_dict(),
+            "variant_domain_counts": variant_domain_counts,
             "source_split_counts": frame["source_split"].value_counts().astype(int).to_dict() if "source_split" in frame.columns else {},
             "unique_groups": int(frame["group_id"].nunique()),
         }
@@ -525,6 +544,7 @@ class ClassifierDiagnosticsRunner:
             "tfidf_json": str(tfidf_json),
             "diagnostic_dataset": str(dataset_path),
         }
+        summary = json_safe(summary)
         (self.run_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
         print("PAPER PORT RECREATED CLASSIFIER DIAGNOSTICS COMPLETED")
         print("Rows:", dataset_summary["rows"])
