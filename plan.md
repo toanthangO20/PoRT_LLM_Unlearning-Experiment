@@ -47,6 +47,7 @@ Definition of done cho full reproduction:
 | `notebooks/artifact_bootstrap/16_kaggle_paper_port_recreated_artifacts_bootstrap.ipynb` | Bootstrap recreated PoRT artifacts | Đã pass trên Kaggle | Không phải smoke test; tạo được T5 recreated checkpoint/dataset và weak classifier dataset; classifier head vẫn unresolved |
 | `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb` | PoRT recreated-artifact smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows, valid rate `1.0`; classifier weak test acc `0.2155`; rethink `18/18`, nên chưa đủ để full run |
 | `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb` | Recreated post-judge classifier diagnostics | Đã pass trên Kaggle | `9216` rows rebuilt; group split no leakage; best TF-IDF `answer_only` test acc `0.9286`, macro F1 `0.9074`; next là smoke matrix với answer expansion |
+| `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb` | PoRT recreated best-classifier smoke matrix | Đã tạo, chờ chạy Kaggle | Dùng best TF-IDF/logistic `answer_only`, expand generated letter thành choice text trước post-judge; vẫn là smoke test |
 
 ### Kết quả notebook 18 mới nhất
 
@@ -348,9 +349,9 @@ Tạo smoke matrix kế tiếp với best classifier từ notebook `18`, vẫn c
 
 Việc cần làm ngay:
 
-- Tạo notebook mới dự kiến `19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb`.
-- Rebuild classifier dataset như notebook `18`: `3` wrong answers per question, group-by-question split, best feature `answer_only`.
-- Train/export TF-IDF logistic best classifier và metadata.
-- Sửa smoke matrix runner để post-judge thấy expanded answer text, ví dụ generated `B` -> `B. <choice text>`, thay vì chỉ chữ `B`.
-- Chạy lại `9` jobs x `2` rows; tiêu chí pass: valid rate `1.0`, rethink rate không còn `1.0` ở mọi job, classifier confidence bins hợp lý.
+- Chạy `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb`.
+- Notebook `19` rebuild classifier dataset như notebook `18`: `3` wrong answers per question, group-by-question split, best feature `answer_only`.
+- Notebook `19` train/export TF-IDF logistic best classifier và metadata.
+- Notebook `19` patch smoke matrix runner để post-judge thấy expanded answer text, ví dụ generated `B` -> `B. <choice text>`, thay vì chỉ chữ `B`.
+- Chạy lại `9` jobs x `2` rows; tiêu chí pass: valid rate `1.0`, rethink rate không còn `1.0` ở mọi job, classifier confidence hợp lý.
 - Chỉ sau khi notebook `19` pass mới cân nhắc full recreated PoRT run.
