@@ -47,7 +47,25 @@ Definition of done cho full reproduction:
 | `notebooks/artifact_bootstrap/16_kaggle_paper_port_recreated_artifacts_bootstrap.ipynb` | Bootstrap recreated PoRT artifacts | Đã pass trên Kaggle | Không phải smoke test; tạo được T5 recreated checkpoint/dataset và weak classifier dataset; classifier head vẫn unresolved |
 | `notebooks/smoke_tests/17_kaggle_paper_port_recreated_artifact_smoke_matrix.ipynb` | PoRT recreated-artifact smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows, valid rate `1.0`; classifier weak test acc `0.2155`; rethink `18/18`, nên chưa đủ để full run |
 | `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb` | Recreated post-judge classifier diagnostics | Đã pass trên Kaggle | `9216` rows rebuilt; group split no leakage; best TF-IDF `answer_only` test acc `0.9286`, macro F1 `0.9074`; next là smoke matrix với answer expansion |
-| `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb` | PoRT recreated best-classifier smoke matrix | Đã tạo, chờ chạy Kaggle | Dùng best TF-IDF/logistic `answer_only`, expand generated letter thành choice text trước post-judge; vẫn là smoke test |
+| `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb` | PoRT recreated best-classifier smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows; valid rate `1.0`; rethink `10/18`; classifier test acc `0.9286`; vẫn là recreated smoke, không phải official paper metric |
+
+### Kết quả notebook 19 mới nhất
+
+Notebook `19` đã chạy xong trên Kaggle ở commit `c71bc6294a76e23d414c3d0e2cd9baa7669a67d1`, không lỗi cell:
+
+- Mode: `PORT_ARTIFACT_MODE=recreated`.
+- Artifact source: `bootstrapped_in_notebook_17` trong run dir notebook `19`.
+- Best classifier: TF-IDF/logistic `answer_only`, trained từ rebuilt WMDP weak proxy data với `3` wrong answers/question.
+- Classifier held-out test: accuracy `0.9286`, macro F1 `0.9074`, positive F1 `0.8631`, ROC-AUC `0.9524`.
+- Post-judge input đã được fix: generated option letter được expand thành choice text trước classifier (`answer_expansion_before_postjudge=true`).
+- Smoke matrix: `9` jobs x `2` rows = `18` rows.
+- Valid prediction rate: `1.0` toàn bộ jobs.
+- Rethink: `10/18 = 0.5556`; không còn always-rethink như notebook `17`.
+- Per-job rethink: `0.5` ở 8/9 jobs, riêng `noise_prefix/cyber=1.0`.
+- Post-judge positive rate tổng: `7/18 = 0.3889`; avg confidence khoảng `0.6766`.
+- Smoke accuracy: `3/18 = 0.1667`; chỉ để quan sát vì sample quá nhỏ và không phải paper metric.
+
+Kết luận: recreated PoRT plumbing đã qua smoke với classifier gate không còn degenerate. Có thể chuyển sang bước scale recreated PoRT run, nhưng vẫn phải ghi rõ đây là recreated artifact path, không phải official paper checkpoint reproduction.
 
 ### Kết quả notebook 18 mới nhất
 
@@ -345,13 +363,12 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Tạo smoke matrix kế tiếp với best classifier từ notebook `18`, vẫn chưa chạy full PoRT paper dataset.
+Chuẩn bị scale recreated PoRT run sau khi notebook `19` pass smoke. Đây vẫn không phải official paper checkpoint reproduction.
 
 Việc cần làm ngay:
 
-- Chạy `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb`.
-- Notebook `19` rebuild classifier dataset như notebook `18`: `3` wrong answers per question, group-by-question split, best feature `answer_only`.
-- Notebook `19` train/export TF-IDF logistic best classifier và metadata.
-- Notebook `19` patch smoke matrix runner để post-judge thấy expanded answer text, ví dụ generated `B` -> `B. <choice text>`, thay vì chỉ chữ `B`.
-- Chạy lại `9` jobs x `2` rows; tiêu chí pass: valid rate `1.0`, rethink rate không còn `1.0` ở mọi job, classifier confidence hợp lý.
-- Chỉ sau khi notebook `19` pass mới cân nhắc full recreated PoRT run.
+- Commit/push kết quả notebook `19`.
+- Tạo notebook kế tiếp cho recreated PoRT scale run dùng đúng classifier/answer-expansion của notebook `19`.
+- Runner mới cần hỗ trợ partial outputs, resume-safe summaries, timing per job, và env `PORT_MAX_SAMPLES` để chạy medium/full bằng cùng notebook.
+- Khuyến nghị default an toàn: chạy medium trước (`PORT_MAX_SAMPLES=32` hoặc `64` mỗi job) để xác nhận runtime/gate distribution; sau đó set full dataset nếu stable.
+- Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
