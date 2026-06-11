@@ -49,6 +49,7 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb` | Recreated post-judge classifier diagnostics | Đã pass trên Kaggle | `9216` rows rebuilt; group split no leakage; best TF-IDF `answer_only` test acc `0.9286`, macro F1 `0.9074`; next là smoke matrix với answer expansion |
 | `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb` | PoRT recreated best-classifier smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows; valid rate `1.0`; rethink `10/18`; classifier test acc `0.9286`; vẫn là recreated smoke, không phải official paper metric |
 | `notebooks/recreated_runs/20_kaggle_paper_port_recreated_scale_run.ipynb` | PoRT recreated best-classifier scale run | Đã pass trên Kaggle | Không phải smoke test; `288` rows (`32`/job), valid rate `0.9931`, rethink `0.6771`, overall acc `0.2222`; dùng classifier và answer expansion của notebook `19`; vẫn là recreated, không phải official metric |
+| `notebooks/recreated_runs/21_kaggle_paper_port_recreated_ablation_diagnostics.ipynb` | PoRT recreated ablation diagnostics | Đã tạo, chờ chạy Kaggle | Không phải smoke test; default `32` rows/job; so sánh raw direct, compiled initial, rethink-all, và threshold sweep để tìm nguyên nhân notebook `20` tụt accuracy |
 
 ### Kết quả notebook 19 mới nhất
 
@@ -382,11 +383,13 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `20` đã pass scale run, nhưng chất lượng recreated PoRT chưa đủ tốt để chạy full ngay.
+Notebook `20` đã pass scale run, nhưng chất lượng recreated PoRT chưa đủ tốt để chạy full ngay. Notebook `21` đã được tạo để phân tích nguyên nhân.
 
 Việc cần làm ngay:
 
-- Đọc sâu `all_predictions.csv`/per-job generations của notebook `20` để phân loại lỗi: invalid answer parsing, prefix compiler sinh prompt xấu, rethink làm tụt accuracy, hay classifier gate trigger quá nhiều.
-- Tạo notebook kế tiếp cho diagnostics/ablation trên cùng `32` samples/job: so sánh direct initial answer vs final rethink answer, no-prefix vs compiled-prefix, và sweep `PORT_CLASSIFIER_CONF_THRESHOLD`.
-- Ưu tiên tìm cấu hình làm rethink giảm và accuracy không thấp hơn no-defense sample trước khi chạy `PORT_MAX_SAMPLES=-1`.
+- Chạy notebook `21` trên Kaggle với default `PORT_MAX_SAMPLES=32`.
+- Đọc `ablation_summary_overall.csv` để xem method nào tốt nhất: raw direct, compiled initial, rethink-all, hay threshold final.
+- Nếu compiled initial thấp hơn raw direct nhiều, ưu tiên sửa/tắt prefix compiler recreated.
+- Nếu rethink-all thấp hơn compiled initial, ưu tiên giảm rethink bằng threshold cao hơn hoặc sửa rethink prompt.
+- Nếu một threshold final vượt rõ notebook `20`, khóa threshold đó rồi chạy lại notebook `20`/scale run với cấu hình mới trước khi full.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
