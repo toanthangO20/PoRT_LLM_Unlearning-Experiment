@@ -50,6 +50,7 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb` | PoRT recreated best-classifier smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows; valid rate `1.0`; rethink `10/18`; classifier test acc `0.9286`; vẫn là recreated smoke, không phải official paper metric |
 | `notebooks/recreated_runs/20_kaggle_paper_port_recreated_scale_run.ipynb` | PoRT recreated best-classifier scale run | Đã pass trên Kaggle | Không phải smoke test; `288` rows (`32`/job), valid rate `0.9931`, rethink `0.6771`, overall acc `0.2222`; dùng classifier và answer expansion của notebook `19`; vẫn là recreated, không phải official metric |
 | `notebooks/recreated_runs/21_kaggle_paper_port_recreated_ablation_diagnostics.ipynb` | PoRT recreated ablation diagnostics | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct acc `0.2917`, compiled initial `0.2361`, rethink-all `0.2188`; best threshold final chỉ `0.2188`, nên threshold sweep không cứu được notebook `20` |
+| `notebooks/recreated_runs/22_kaggle_paper_port_generation_baseline_identity_ablation.ipynb` | Generation baseline + identity ablation | Đã tạo, chờ chạy Kaggle | Không phải smoke test; default `32` rows/job; so sánh top-logit reference, sampled generation no-defense, identity-prefix/no-rethink, compiled-prefix/no-rethink |
 
 ### Kết quả notebook 19 mới nhất
 
@@ -410,12 +411,13 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `21` xác nhận recreated PoRT hiện bị degrade bởi prefix compiler/rethink; không nên chạy full recreated PoRT ở cấu hình hiện tại.
+Notebook `21` xác nhận recreated PoRT hiện bị degrade bởi prefix compiler/rethink; không nên chạy full recreated PoRT ở cấu hình hiện tại. Notebook `22` đã được tạo để tách evaluator generation vs top-logit và identity-prefix/no-rethink.
 
 Việc cần làm ngay:
 
 - Không chạy `PORT_MAX_SAMPLES=-1` cho recreated PoRT hiện tại.
-- Tạo notebook kế tiếp để kiểm tra generation-based no-defense baseline trên cùng `32` rows/job, đồng thời chạy ablation `identity_prefix/no_rethink` để tách riêng chênh lệch do evaluator generation vs top-logit baseline.
+- Chạy notebook `22` trên Kaggle với default `PORT_MAX_SAMPLES=32`.
+- Đọc `generation_baseline_summary_overall.csv` để so sánh `top_logit_reference`, `generation_no_defense`, `identity_prefix_no_rethink`, `compiled_prefix_no_rethink`.
 - Nếu raw direct generation vẫn thấp hơn top-logit baseline đáng kể, cần chuẩn hóa evaluator trước khi đánh giá PoRT.
 - Nếu identity-prefix/no-rethink vượt compiled/rethink nhưng vẫn không vượt raw direct, dừng hướng threshold tuning và quay lại vấn đề artifact/prefix compiler chính thức.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
