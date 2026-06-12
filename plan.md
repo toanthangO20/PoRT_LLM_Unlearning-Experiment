@@ -49,7 +49,7 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/18_kaggle_paper_port_recreated_classifier_diagnostics.ipynb` | Recreated post-judge classifier diagnostics | Đã pass trên Kaggle | `9216` rows rebuilt; group split no leakage; best TF-IDF `answer_only` test acc `0.9286`, macro F1 `0.9074`; next là smoke matrix với answer expansion |
 | `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb` | PoRT recreated best-classifier smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows; valid rate `1.0`; rethink `10/18`; classifier test acc `0.9286`; vẫn là recreated smoke, không phải official paper metric |
 | `notebooks/recreated_runs/20_kaggle_paper_port_recreated_scale_run.ipynb` | PoRT recreated best-classifier scale run | Đã pass trên Kaggle | Không phải smoke test; `288` rows (`32`/job), valid rate `0.9931`, rethink `0.6771`, overall acc `0.2222`; dùng classifier và answer expansion của notebook `19`; vẫn là recreated, không phải official metric |
-| `notebooks/recreated_runs/21_kaggle_paper_port_recreated_ablation_diagnostics.ipynb` | PoRT recreated ablation diagnostics | Đã tạo, chờ chạy Kaggle | Không phải smoke test; default `32` rows/job; so sánh raw direct, compiled initial, rethink-all, và threshold sweep để tìm nguyên nhân notebook `20` tụt accuracy |
+| `notebooks/recreated_runs/21_kaggle_paper_port_recreated_ablation_diagnostics.ipynb` | PoRT recreated ablation diagnostics | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct acc `0.2917`, compiled initial `0.2361`, rethink-all `0.2188`; best threshold final chỉ `0.2188`, nên threshold sweep không cứu được notebook `20` |
 
 ### Kết quả notebook 19 mới nhất
 
@@ -86,6 +86,33 @@ Notebook `20` đã chạy xong trên Kaggle ở commit `c51a91213162e7f7f6ee1d05
 - Runtime cell chính khoảng `36` phút wall-clock; tổng per-job runtime khoảng `29` phút, chậm nhất là `noise_prefix/cyber` khoảng `375s`.
 
 Kết luận: notebook `20` pass về mặt scale/pipeline và artifact logging, nhưng kết quả chất lượng chưa đủ tốt để chạy full recreated PoRT ngay nếu mục tiêu là so sánh nghiêm túc với baseline. Nút thắt hiện tại nhiều khả năng là recreated T5 prefix compiler/rerank/rethink path hoặc confidence threshold/gate, không phải lỗi missing artifact hay classifier luôn-rethink.
+
+### Kết quả notebook 21 mới nhất
+
+Notebook `21` đã chạy xong trên Kaggle ở commit `adeaa25167574040185fc1c188a9d53dec051c70`, không lỗi cell:
+
+- Mode: `PORT_ARTIFACT_MODE=recreated`.
+- Row count mode: `first_32_per_job`.
+- Matrix: `9` jobs x `32` rows = `288` rows.
+- Diagnostic thresholds: `0.50`, `0.60`, `0.70`, `0.80`, `0.90`, `0.95`.
+- Classifier held-out test vẫn tốt: accuracy `0.9286`, macro F1 `0.9074`.
+- Raw direct generation: `84/288 = 0.2917`, valid `0.9965`.
+- Compiled-prefix initial generation: `68/288 = 0.2361`, valid `0.9826`.
+- Rethink-all generation: `63/288 = 0.2188`, valid `0.9896`.
+- Threshold final:
+  - `0.50`: accuracy `0.1285`, rethink `0.2743`.
+  - `0.60`: accuracy `0.1528`, rethink `0.3958`.
+  - `0.70`: accuracy `0.1840`, rethink `0.6806`.
+  - `0.80`: accuracy `0.2153`, rethink `0.9861`.
+  - Best reported threshold: `0.90`, accuracy `0.2188`, rethink `1.0`.
+- Biggest compiled-prefix regressions vs raw direct:
+  - `noise_prefix/cyber`: `0.5000 -> 0.2812`.
+  - `noise_prefix/chem`: `0.3438 -> 0.2188`.
+  - `composite/bio`: `0.3438 -> 0.2188`.
+- Rethink helps only a few small slices (`noise_prefix/bio`, `composite/chem`) but hurts overall.
+- Runtime cell chính khoảng `41` phút wall-clock; summed diagnostic job time khoảng `40.5` phút.
+
+Kết luận: recreated PoRT hiện tụt chủ yếu do prefix compiler và rethink path, không phải do chọn threshold chưa đúng. Raw direct generation là method tốt nhất trong diagnostics, nhưng vẫn chưa trực tiếp so sánh với notebook `11` vì notebook `11` dùng top-logit evaluator còn diagnostics dùng generated answers.
 
 ### Kết quả notebook 18 mới nhất
 
@@ -383,13 +410,12 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `20` đã pass scale run, nhưng chất lượng recreated PoRT chưa đủ tốt để chạy full ngay. Notebook `21` đã được tạo để phân tích nguyên nhân.
+Notebook `21` xác nhận recreated PoRT hiện bị degrade bởi prefix compiler/rethink; không nên chạy full recreated PoRT ở cấu hình hiện tại.
 
 Việc cần làm ngay:
 
-- Chạy notebook `21` trên Kaggle với default `PORT_MAX_SAMPLES=32`.
-- Đọc `ablation_summary_overall.csv` để xem method nào tốt nhất: raw direct, compiled initial, rethink-all, hay threshold final.
-- Nếu compiled initial thấp hơn raw direct nhiều, ưu tiên sửa/tắt prefix compiler recreated.
-- Nếu rethink-all thấp hơn compiled initial, ưu tiên giảm rethink bằng threshold cao hơn hoặc sửa rethink prompt.
-- Nếu một threshold final vượt rõ notebook `20`, khóa threshold đó rồi chạy lại notebook `20`/scale run với cấu hình mới trước khi full.
+- Không chạy `PORT_MAX_SAMPLES=-1` cho recreated PoRT hiện tại.
+- Tạo notebook kế tiếp để kiểm tra generation-based no-defense baseline trên cùng `32` rows/job, đồng thời chạy ablation `identity_prefix/no_rethink` để tách riêng chênh lệch do evaluator generation vs top-logit baseline.
+- Nếu raw direct generation vẫn thấp hơn top-logit baseline đáng kể, cần chuẩn hóa evaluator trước khi đánh giá PoRT.
+- Nếu identity-prefix/no-rethink vượt compiled/rethink nhưng vẫn không vượt raw direct, dừng hướng threshold tuning và quay lại vấn đề artifact/prefix compiler chính thức.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
