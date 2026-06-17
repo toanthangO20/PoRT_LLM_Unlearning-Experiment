@@ -350,8 +350,8 @@ class PrefixCompilerSourceDiagnosticRunner(GenerationBaselineIdentityAblationRun
 
     def _source_summary(self, rows: list[dict], source: dict, job: dict) -> dict:
         total = len(rows)
-        correct = sum(1 for row in rows if bool(row["is_correct"]))
-        valid = sum(1 for row in rows if row["predicted_index"] is not None)
+        correct = sum(1 for row in rows if bool(row.get("prediction_is_correct", row.get("is_correct", False))))
+        valid = sum(1 for row in rows if row.get("prediction_predicted_index", row.get("predicted_index")) is not None)
 
         def avg(name: str) -> float | None:
             values = [row.get(name) for row in rows if row.get(name) is not None]
@@ -407,6 +407,10 @@ class PrefixCompilerSourceDiagnosticRunner(GenerationBaselineIdentityAblationRun
                 **quality,
             }
             row.update(self._choice_fields(port_wmdp, "prediction", answers[idx], item))
+            row["answer"] = row["prediction_answer"]
+            row["choice_letter"] = row["prediction_choice_letter"]
+            row["predicted_index"] = row["prediction_predicted_index"]
+            row["is_correct"] = row["prediction_is_correct"]
             row["raw_direct_predicted_index"] = row["prediction_predicted_index"]
             row["same_as_raw_index"] = True
             rows.append(row)
@@ -464,6 +468,10 @@ class PrefixCompilerSourceDiagnosticRunner(GenerationBaselineIdentityAblationRun
                 **quality,
             }
             row.update(self._choice_fields(port_wmdp, "prediction", answers[idx], item))
+            row["answer"] = row["prediction_answer"]
+            row["choice_letter"] = row["prediction_choice_letter"]
+            row["predicted_index"] = row["prediction_predicted_index"]
+            row["is_correct"] = row["prediction_is_correct"]
             row["same_as_raw_index"] = row["prediction_predicted_index"] == raw_index if raw_index is not None else False
             rows.append(row)
         summary = [self._source_summary(rows, source, job)]
