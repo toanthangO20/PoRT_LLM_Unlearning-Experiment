@@ -11,7 +11,7 @@ if str(COMMON_DIR) not in sys.path:
     sys.path.insert(0, str(COMMON_DIR))
 
 from port_recreated_ablation_diagnostics import RecreatedAblationDiagnosticsRunner
-from port_recreated_smoke import env_text
+from port_recreated_smoke import env_bool, env_text
 
 
 class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunner):
@@ -29,8 +29,119 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
             f"paper_port_wmdp_generation_baseline_identity_ablation_{config['model_name']}",
         )
         config["max_samples"] = int(env_text("PORT_MAX_SAMPLES", "32"))
+        config["top_logit_batch_size"] = int(env_text("PORT_TOP_LOGIT_BATCH_SIZE", "1"))
+        config["enable_compiled_prefix"] = env_bool("PORT_ENABLE_COMPILED_PREFIX", True)
+        config["generation_t5_model_path"] = env_text(
+            "PORT_GENERATION_T5_MODEL_PATH",
+            env_text("PORT_T5_MODEL_PATH", config["t5_base_model"]),
+        )
         config["scale_run_family"] = "generation_baseline_identity_ablation"
         return config
+
+    def resolve_or_bootstrap_artifacts(self) -> dict:
+        artifact_dir = self.run_dir / "generation_baseline_no_bootstrap_artifacts"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        audit = {
+            "artifact_mode": self.config["artifact_mode"],
+            "artifact_note": "Notebook 22 diagnostic does not bootstrap or train recreated artifacts to avoid GPU OOM.",
+            "artifact_source": "no_bootstrap_generation_diagnostic",
+            "official_paper_checkpoint": False,
+            "t5_model_path": self.config["generation_t5_model_path"],
+            "enable_compiled_prefix": self.config["enable_compiled_prefix"],
+            "pipeline_script_path": str(self.pipeline_script_path),
+            "post_classifier_dir": str(self.post_classifier_dir),
+            "eco_root": str(self.eco_root),
+            "eco_config_path": str(self.eco_config_path),
+            "example_library_path": str(self.example_library_path),
+            "limitations": [
+                "This diagnostic bypasses recreated artifact bootstrap and classifier training.",
+                "compiled_prefix_no_rethink uses PORT_GENERATION_T5_MODEL_PATH/PORT_T5_MODEL_PATH when enabled.",
+            ],
+        }
+        (self.run_dir / "artifact_audit.json").write_text(json.dumps(audit, indent=2, default=str), encoding="utf-8")
+        print(json.dumps(audit, indent=2, default=str))
+        return {
+            "artifact_dir": artifact_dir,
+            "t5_model_path": self.config["generation_t5_model_path"],
+            "weak_dataset": {},
+            "audit": audit,
+        }
+
+    def train_weak_classifier(self, weak_dataset: dict[str, Path]) -> dict:
+        artifact_dir = self.run_dir / "artifacts" / "not_used_classifier"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        classifier_path = artifact_dir / "classifier.joblib"
+        classifier_path.write_text("not used by notebook 22 generation baseline diagnostic\n", encoding="utf-8")
+        metadata = {
+            "classifier_family": "not-used-generation-baseline-diagnostic",
+            "not_official_checkpoint": True,
+            "metrics": {},
+            "limitations": [
+                "Notebook 22 does not run classifier gating.",
+                "A placeholder classifier artifact is written only to keep common artifact checks simple.",
+            ],
+        }
+        (artifact_dir / "classifier_metadata.json").write_text(json.dumps(metadata, indent=2, default=str), encoding="utf-8")
+        print(json.dumps({"classifier_head_ckpt": str(classifier_path), "note": "not used"}, indent=2, default=str))
+        return {
+            "classifier_base_model": "not-used-generation-baseline-diagnostic",
+            "classifier_head_ckpt": str(classifier_path),
+            "classifier_artifact_dir": artifact_dir,
+            "classifier_metadata": metadata,
+        }
+
+    def install_recreated_setup(self, port_wmdp, classifier_head_ckpt: str) -> None:
+        import torch
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+        if self.config["enable_compiled_prefix"]:
+            from transformers import T5ForConditionalGeneration, T5TokenizerFast
+
+        def setup_all_models_generation(args):
+            main_device = torch.device(args.device if args.device.startswith("cuda") and torch.cuda.is_available() else "cpu")
+            dtype = getattr(torch, args.torch_dtype)
+
+            t5_model = None
+            t5_tokenizer = None
+            if self.config["enable_compiled_prefix"]:
+                t5_tokenizer = T5TokenizerFast.from_pretrained(args.t5_model_path)
+                t5_model = T5ForConditionalGeneration.from_pretrained(args.t5_model_path).to(main_device)
+                t5_model.eval()
+
+            llama_tokenizer = AutoTokenizer.from_pretrained(args.model_hub_name, trust_remote_code=True)
+            if llama_tokenizer.pad_token is None:
+                llama_tokenizer.pad_token = llama_tokenizer.eos_token
+            llama_tokenizer.padding_side = "left"
+
+            llama_config = AutoConfig.from_pretrained(args.model_path, trust_remote_code=True)
+            if getattr(llama_config, "pad_token_id", None) is None:
+                llama_config.pad_token_id = llama_tokenizer.pad_token_id
+
+            llama_model = AutoModelForCausalLM.from_pretrained(
+                args.model_path,
+                config=llama_config,
+                torch_dtype=dtype if main_device.type == "cuda" else torch.float32,
+                attn_implementation="sdpa",
+                trust_remote_code=True,
+            ).to(main_device)
+            llama_model.config.pad_token_id = llama_tokenizer.pad_token_id
+            llama_model.eval()
+
+            return {
+                "t5_model": t5_model,
+                "t5_tokenizer": t5_tokenizer,
+                "prefix_llama_model": llama_model,
+                "main_llama_model": llama_model,
+                "llama_tokenizer": llama_tokenizer,
+                "classifier_model": None,
+                "classifier_tokenizer": None,
+            }
+
+        port_wmdp.setup_all_models = setup_all_models_generation
+        print(
+            "Installed generation baseline setup "
+            f"(compiled_prefix={self.config['enable_compiled_prefix']}, t5={self.config['generation_t5_model_path']})"
+        )
 
     def _build_run_config(self, runtime_script_path: Path, artifact_info: dict, classifier_info: dict) -> dict:
         run_config = super()._build_run_config(runtime_script_path, artifact_info, classifier_info)
@@ -43,15 +154,30 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
                     "identity_prefix_no_rethink",
                     "compiled_prefix_no_rethink",
                 ],
+                "enable_compiled_prefix": self.config["enable_compiled_prefix"],
+                "generation_t5_model_path": self.config["generation_t5_model_path"],
                 "limitations": [
                     "top_logit_reference is intended to match the no-defense evaluator on the same selected rows.",
                     "generation_no_defense uses sampled generation, so it can differ from top-logit reference even on identical prompts.",
                     "identity_prefix_no_rethink should match generation_no_defense when generation seed and prompts are identical.",
+                    "Top-logit reference is streamed in small chunks to avoid holding full-sequence logits for all rows in VRAM.",
+                    "Notebook 22 bypasses recreated artifact bootstrap and classifier training to avoid holding training state in VRAM.",
                     "This is a recreated PoRT diagnostic built from public data, not an official paper checkpoint reproduction.",
                 ],
+                "top_logit_batch_size": self.config["top_logit_batch_size"],
             }
         )
         return run_config
+
+    @staticmethod
+    def _clear_cuda_cache() -> None:
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     @staticmethod
     def _context_window(model, tokenizer) -> int | None:
@@ -88,27 +214,47 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
         context_window = self._context_window(model, tokenizer)
         if context_window is not None:
             kwargs.update({"truncation": True, "max_length": context_window})
-        try:
-            encoding = tokenizer(prompts, **kwargs).to(model.device)
-        finally:
-            tokenizer.padding_side = original_padding_side
-            if original_truncation_side is not None:
-                tokenizer.truncation_side = original_truncation_side
-
-        with torch.no_grad():
-            logits = model(**encoding).logits
+        top_logit_batch_size = max(1, int(self.config["top_logit_batch_size"]))
 
         predictions = []
         prediction_labels = []
         logit_rows = []
-        choice_tensor = torch.tensor(choice_token_ids, dtype=torch.long, device=logits.device)
-        for idx, attention_mask in enumerate(encoding["attention_mask"]):
-            prompt_end = int(attention_mask.sum().item()) - 1
-            choice_logits = logits[idx, prompt_end, choice_tensor].detach().float().cpu().tolist()
-            pred_index = int(max(range(len(choice_logits)), key=lambda item: choice_logits[item]))
-            predictions.append(pred_index)
-            prediction_labels.append(labels[pred_index])
-            logit_rows.append({labels[i]: float(choice_logits[i]) for i in range(len(labels))})
+
+        def model_forward(encoding, keep_last_only: bool):
+            try:
+                if keep_last_only:
+                    return model(**encoding, use_cache=False, logits_to_keep=1)
+                return model(**encoding, use_cache=False)
+            except TypeError:
+                return model(**encoding, use_cache=False)
+
+        try:
+            for start in range(0, len(prompts), top_logit_batch_size):
+                chunk_prompts = prompts[start : start + top_logit_batch_size]
+                encoding = tokenizer(chunk_prompts, **kwargs).to(model.device)
+
+                with torch.inference_mode():
+                    outputs = model_forward(encoding, keep_last_only=len(chunk_prompts) == 1)
+                    logits = outputs.logits
+
+                choice_tensor = torch.tensor(choice_token_ids, dtype=torch.long, device=logits.device)
+                for idx, attention_mask in enumerate(encoding["attention_mask"]):
+                    if logits.shape[1] == 1:
+                        choice_logits = logits[idx, -1, choice_tensor].detach().float().cpu().tolist()
+                    else:
+                        prompt_end = int(attention_mask.sum().item()) - 1
+                        choice_logits = logits[idx, prompt_end, choice_tensor].detach().float().cpu().tolist()
+                    pred_index = int(max(range(len(choice_logits)), key=lambda item: choice_logits[item]))
+                    predictions.append(pred_index)
+                    prediction_labels.append(labels[pred_index])
+                    logit_rows.append({labels[i]: float(choice_logits[i]) for i in range(len(labels))})
+
+                del encoding, outputs, logits
+                self._clear_cuda_cache()
+        finally:
+            tokenizer.padding_side = original_padding_side
+            if original_truncation_side is not None:
+                tokenizer.truncation_side = original_truncation_side
         return predictions, prediction_labels, logit_rows
 
     def _prediction_fields_from_index(self, prefix: str, predicted_index: int | None, item: dict, answer: str | None = None) -> dict:
@@ -163,6 +309,11 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
             row["resume_status"] = "skipped_existing"
         return rows, summary
 
+    def _compile_prompts(self, prompts: list[str], models: dict, args, port_wmdp) -> tuple[list[str], list[bool]]:
+        if not self.config["enable_compiled_prefix"]:
+            return list(prompts), [True for _ in prompts]
+        return super()._compile_prompts(prompts, models, args, port_wmdp)
+
     def _run_job(self, job_index: int, job: dict, models: dict, base_args: SimpleNamespace, port_wmdp) -> tuple[list[dict], list[dict], dict]:
         args = SimpleNamespace(**vars(base_args))
         args.wmdp_set = job["wmdp_set"]
@@ -170,18 +321,23 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
         prompts = [item["prompt"] for item in records]
 
         top_indices, top_letters, top_logits = self._top_logit_predictions(prompts, models)
+        self._clear_cuda_cache()
 
         self._set_generation_seed(self.config["seed"], job_index, 1)
         generation_no_defense_answers = self._generate_answers(prompts, models, args, port_wmdp)
+        self._clear_cuda_cache()
 
         self._set_generation_seed(self.config["seed"], job_index, 1)
         identity_prefix_answers = self._generate_answers(prompts, models, args, port_wmdp)
+        self._clear_cuda_cache()
 
         self._set_generation_seed(self.config["seed"], job_index, 2)
         compiled_prompts, fallback_flags = self._compile_prompts(prompts, models, args, port_wmdp)
+        self._clear_cuda_cache()
 
         self._set_generation_seed(self.config["seed"], job_index, 3)
         compiled_prefix_answers = self._generate_answers(compiled_prompts, models, args, port_wmdp)
+        self._clear_cuda_cache()
 
         rows = []
         for idx, item in enumerate(records):
@@ -276,12 +432,22 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
         (output_dir / "job_summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
         (output_dir / "prompt_examples.json").write_text(json.dumps(prompt_examples, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
 
+    @staticmethod
+    def _append_rows_to_csv(path: Path, rows: list[dict]) -> None:
+        import pandas as pd
+
+        if not rows:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(rows).to_csv(path, mode="a", header=not path.exists(), index=False)
+
     def _write_summary_artifacts(
         self,
         run_config: dict,
         classifier_info: dict,
         model_load_seconds: float,
         all_rows: list[dict],
+        total_rows: int,
         summary_rows: list[dict],
         completed_jobs: list[dict],
         skipped_jobs: list[dict],
@@ -294,7 +460,6 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
         overall_path = self.run_dir / "generation_baseline_summary_overall.csv"
         failed_jobs_path = self.run_dir / "failed_jobs.json"
 
-        pd.DataFrame(all_rows).to_csv(predictions_path, index=False)
         pd.DataFrame(summary_rows).to_csv(by_job_path, index=False)
         overall_summary = self._weighted_summary(summary_rows)
         pd.DataFrame(overall_summary).to_csv(overall_path, index=False)
@@ -311,7 +476,7 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
             "completed_jobs": completed_jobs,
             "skipped_jobs": skipped_jobs,
             "failed_jobs": failed_jobs,
-            "rows": len(all_rows),
+            "rows": total_rows,
             "summary_by_job": summary_rows,
             "overall_summary": overall_summary,
             "top_logit_minus_generation_accuracy": (top_logit["accuracy"] - generation["accuracy"]) if top_logit and generation else None,
@@ -329,11 +494,14 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
         (self.run_dir / "run_config.json").write_text(json.dumps(run_config, indent=2, default=str), encoding="utf-8")
 
         matrix_jobs = self.build_matrix_jobs()
-        all_rows: list[dict] = []
         summary_rows: list[dict] = []
+        total_rows = 0
         completed_jobs: list[dict] = []
         skipped_jobs: list[dict] = []
         failed_jobs: list[dict] = []
+        root_predictions_path = self.run_dir / "all_generation_baseline_predictions.csv"
+        if root_predictions_path.exists():
+            root_predictions_path.unlink()
 
         existing_jobs = {}
         for job_index, job in enumerate(matrix_jobs, start=1):
@@ -380,18 +548,22 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
                     completed_jobs.append({"job_index": job_index, "variant": job["variant"], "domain": job["domain"], "rows": len(job["records"]), "run_seconds": job_seconds, "output_dir": str(output_dir)})
                     print(json.dumps(summary, indent=2, default=str))
 
-                all_rows.extend(rows)
+                self._append_rows_to_csv(root_predictions_path, rows)
+                total_rows += len(rows)
                 summary_rows.extend(summary)
                 summary_payload = self._write_summary_artifacts(
                     run_config,
                     classifier_info,
                     model_load_seconds,
-                    all_rows,
+                    [],
+                    total_rows,
                     summary_rows,
                     completed_jobs,
                     skipped_jobs,
                     failed_jobs,
                 )
+                del rows
+                self._clear_cuda_cache()
             except Exception as exc:
                 failure = {
                     "job_index": job_index,
@@ -407,7 +579,8 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
                     run_config,
                     classifier_info,
                     model_load_seconds,
-                    all_rows,
+                    [],
+                    total_rows,
                     summary_rows,
                     completed_jobs,
                     skipped_jobs,
@@ -422,7 +595,8 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
                 run_config,
                 classifier_info,
                 model_load_seconds,
-                all_rows,
+                [],
+                total_rows,
                 summary_rows,
                 completed_jobs,
                 skipped_jobs,
@@ -431,7 +605,7 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
         print(json.dumps(summary_payload, indent=2, default=str)[:6000])
         return {
             "matrix_jobs": matrix_jobs,
-            "all_rows": all_rows,
+            "total_rows": total_rows,
             "summary_rows": summary_rows,
             "summary_payload": summary_payload,
             "completed_jobs": completed_jobs,
@@ -473,7 +647,7 @@ class GenerationBaselineIdentityAblationRunner(RecreatedAblationDiagnosticsRunne
             "generation_baseline_identity_ablation": True,
             "official_paper_checkpoint": False,
             "jobs": expected_jobs,
-            "rows": len(matrix_result["all_rows"]),
+            "rows": matrix_result["total_rows"],
             "max_samples": self.config["max_samples"],
             "overall_summary": overall,
             "top_logit_minus_generation_accuracy": matrix_result["summary_payload"]["top_logit_minus_generation_accuracy"],
