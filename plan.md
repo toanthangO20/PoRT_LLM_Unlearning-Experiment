@@ -51,6 +51,7 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/20_kaggle_paper_port_recreated_scale_run.ipynb` | PoRT recreated best-classifier scale run | Đã pass trên Kaggle | Không phải smoke test; `288` rows (`32`/job), valid rate `0.9931`, rethink `0.6771`, overall acc `0.2222`; dùng classifier và answer expansion của notebook `19`; vẫn là recreated, không phải official metric |
 | `notebooks/recreated_runs/21_kaggle_paper_port_recreated_ablation_diagnostics.ipynb` | PoRT recreated ablation diagnostics | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct acc `0.2917`, compiled initial `0.2361`, rethink-all `0.2188`; best threshold final chỉ `0.2188`, nên threshold sweep không cứu được notebook `20` |
 | `notebooks/recreated_runs/22_kaggle_paper_port_generation_baseline_identity_ablation.ipynb` | Generation baseline + identity ablation | Đã pass trên Kaggle | Không phải smoke test; `288` rows; identity-prefix/no-rethink khớp raw generation tuyệt đối; compiled-prefix/no-rethink tụt `-0.0625`; không bootstrap/train recreated artifacts; không phải official paper metric |
+| `notebooks/recreated_runs/23_kaggle_paper_port_prefix_compiler_source_diagnostic.ipynb` | Prefix compiler source diagnostic | Đã tạo, chờ chạy Kaggle | Không phải smoke test; so sánh raw generation với các nguồn T5 prefix compiler; default chạy `google/flan-t5-small`, tự thêm recreated artifact nếu có dir/zip, nếu không thì ghi skipped reason thay vì bootstrap/train |
 
 ### Kết quả notebook 22 mới nhất
 
@@ -447,12 +448,13 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `22` xác nhận identity-prefix/no-rethink không làm thay đổi raw generation, còn compiled-prefix/no-rethink làm tụt accuracy. Notebook `21` trước đó cũng xác nhận rethink path không cứu được kết quả. Vì vậy chưa nên chạy full recreated PoRT ở cấu hình hiện tại.
+Notebook `22` xác nhận identity-prefix/no-rethink không làm thay đổi raw generation, còn compiled-prefix/no-rethink làm tụt accuracy. Notebook `21` trước đó cũng xác nhận rethink path không cứu được kết quả. Notebook `23` đã được tạo để kiểm tra trực tiếp prefix compiler source/artifact gap. Vì vậy chưa nên chạy full recreated PoRT ở cấu hình hiện tại.
 
 Việc cần làm ngay:
 
 - Không chạy `PORT_MAX_SAMPLES=-1` cho recreated PoRT hiện tại.
 - Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
+- Chạy `notebooks/recreated_runs/23_kaggle_paper_port_prefix_compiler_source_diagnostic.ipynb` trên Kaggle với default `PORT_MAX_SAMPLES=32`.
+- Đọc `prefix_compiler_summary_overall.csv` để so sánh `raw_direct`, `base_t5`, và `recreated_artifact` nếu artifact có sẵn.
 - Dừng hướng threshold tuning vì identity đã khớp raw generation, còn compiled-prefix/rethink là phần làm tụt.
-- Next notebook nên tập trung vào prefix compiler/artifact gap: hoặc kiểm tra/resolve official PoRT T5 + classifier artifacts, hoặc tạo diagnostic riêng cho chất lượng prefix compiler trước khi scale.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
