@@ -50,7 +50,43 @@ Definition of done cho full reproduction:
 | `notebooks/smoke_tests/19_kaggle_paper_port_recreated_best_classifier_smoke_matrix.ipynb` | PoRT recreated best-classifier smoke matrix | Đã pass trên Kaggle | `9` jobs, `18` rows; valid rate `1.0`; rethink `10/18`; classifier test acc `0.9286`; vẫn là recreated smoke, không phải official paper metric |
 | `notebooks/recreated_runs/20_kaggle_paper_port_recreated_scale_run.ipynb` | PoRT recreated best-classifier scale run | Đã pass trên Kaggle | Không phải smoke test; `288` rows (`32`/job), valid rate `0.9931`, rethink `0.6771`, overall acc `0.2222`; dùng classifier và answer expansion của notebook `19`; vẫn là recreated, không phải official metric |
 | `notebooks/recreated_runs/21_kaggle_paper_port_recreated_ablation_diagnostics.ipynb` | PoRT recreated ablation diagnostics | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct acc `0.2917`, compiled initial `0.2361`, rethink-all `0.2188`; best threshold final chỉ `0.2188`, nên threshold sweep không cứu được notebook `20` |
-| `notebooks/recreated_runs/22_kaggle_paper_port_generation_baseline_identity_ablation.ipynb` | Generation baseline + identity ablation | Đã sửa OOM lần 2, chờ chạy lại Kaggle | Không phải smoke test; không bootstrap/train recreated artifacts; top-logit stream theo `PORT_TOP_LOGIT_BATCH_SIZE=1`, append output theo job; so sánh top-logit, sampled generation, identity-prefix/no-rethink, compiled-prefix/no-rethink |
+| `notebooks/recreated_runs/22_kaggle_paper_port_generation_baseline_identity_ablation.ipynb` | Generation baseline + identity ablation | Đã pass trên Kaggle | Không phải smoke test; `288` rows; identity-prefix/no-rethink khớp raw generation tuyệt đối; compiled-prefix/no-rethink tụt `-0.0625`; không bootstrap/train recreated artifacts; không phải official paper metric |
+
+### Kết quả notebook 22 mới nhất
+
+Notebook `22` đã chạy xong trên Kaggle ở commit `295681bfa1522ce63fb61bdf9619f9f10209b8ef`, không lỗi cell và không còn OOM:
+
+- Mode: `PORT_ARTIFACT_MODE=recreated`, nhưng diagnostic này cố ý không bootstrap/train recreated artifacts để tránh giữ training state trong VRAM.
+- Target model: `microsoft/phi-1_5`, dtype `float16`.
+- Prefix model cho nhánh compiled-prefix: `google/flan-t5-small`.
+- Matrix: `9` jobs x `32` rows = `288` rows.
+- Prompt source đúng: `original` dùng `question_plus_choices`; `noise_prefix` và `composite` dùng `full_question`.
+- Top-logit được stream với `PORT_TOP_LOGIT_BATCH_SIZE=1`.
+- Artifacts đã ghi trên Kaggle: `summary.json`, `all_generation_baseline_predictions.csv`, `generation_baseline_summary_by_job.csv`, `generation_baseline_summary_overall.csv`, `failed_jobs.json`.
+
+Overall summary:
+
+| Method | Correct / Rows | Accuracy | Valid rate |
+| --- | ---: | ---: | ---: |
+| `generation_no_defense` | `84/288` | `0.2917` | `0.9965` |
+| `identity_prefix_no_rethink` | `84/288` | `0.2917` | `0.9965` |
+| `top_logit_reference` | `74/288` | `0.2569` | `1.0000` |
+| `compiled_prefix_no_rethink` | `66/288` | `0.2292` | `0.9826` |
+
+Theo variant:
+
+| Variant | top-logit | generation | identity-prefix | compiled-prefix |
+| --- | ---: | ---: | ---: | ---: |
+| `original` | `0.2188` | `0.2604` | `0.2604` | `0.2604` |
+| `noise_prefix` | `0.3125` | `0.3542` | `0.3542` | `0.2292` |
+| `composite` | `0.2396` | `0.2604` | `0.2604` | `0.1979` |
+
+Kết luận:
+
+- Identity-prefix/no-rethink khớp `generation_no_defense` cả answer và index (`same_answer_rate=1.0`, `same_index_rate=1.0`), nên wrapper identity path không phải nguyên nhân làm tụt.
+- Generation evaluator cho first-32 sample cao hơn top-logit reference `+0.0347`; do đó không được trộn metric generation với metric top-logit của notebook `11` khi claim paper baseline.
+- Compiled-prefix/no-rethink thấp hơn identity `-0.0625`; kết hợp với notebook `21`, nút thắt chính vẫn là prefix compiler/rethink path, không phải threshold.
+- Chưa có cơ sở chạy full recreated PoRT để claim cải thiện; full no-defense baseline notebook `11` vẫn là mốc paper baseline đáng tin nhất hiện tại.
 
 ### Kết quả notebook 19 mới nhất
 
@@ -411,13 +447,12 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `21` xác nhận recreated PoRT hiện bị degrade bởi prefix compiler/rethink; không nên chạy full recreated PoRT ở cấu hình hiện tại. Notebook `22` đã được tạo để tách evaluator generation vs top-logit và identity-prefix/no-rethink.
+Notebook `22` xác nhận identity-prefix/no-rethink không làm thay đổi raw generation, còn compiled-prefix/no-rethink làm tụt accuracy. Notebook `21` trước đó cũng xác nhận rethink path không cứu được kết quả. Vì vậy chưa nên chạy full recreated PoRT ở cấu hình hiện tại.
 
 Việc cần làm ngay:
 
 - Không chạy `PORT_MAX_SAMPLES=-1` cho recreated PoRT hiện tại.
-- Chạy lại notebook `22` trên Kaggle với default `PORT_MAX_SAMPLES=32`, `PORT_TOP_LOGIT_BATCH_SIZE=1`, và không bootstrap/train recreated artifacts.
-- Đọc `generation_baseline_summary_overall.csv` để so sánh `top_logit_reference`, `generation_no_defense`, `identity_prefix_no_rethink`, `compiled_prefix_no_rethink`.
-- Nếu raw direct generation vẫn thấp hơn top-logit baseline đáng kể, cần chuẩn hóa evaluator trước khi đánh giá PoRT.
-- Nếu identity-prefix/no-rethink vượt compiled/rethink nhưng vẫn không vượt raw direct, dừng hướng threshold tuning và quay lại vấn đề artifact/prefix compiler chính thức.
+- Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
+- Dừng hướng threshold tuning vì identity đã khớp raw generation, còn compiled-prefix/rethink là phần làm tụt.
+- Next notebook nên tập trung vào prefix compiler/artifact gap: hoặc kiểm tra/resolve official PoRT T5 + classifier artifacts, hoặc tạo diagnostic riêng cho chất lượng prefix compiler trước khi scale.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
