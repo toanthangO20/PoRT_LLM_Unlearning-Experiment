@@ -1,0 +1,29 @@
+{
+  "artifact_name": "paper_port_recreated_artifacts_bootstrap.zip",
+  "artifact_size": 286546001,
+  "artifact_sha256": "546569004ce0f3de8dab85f286341dd0281cea023113f38a819410cbd90e6ce8",
+  "chunk_size": 75000000,
+  "chunks": [
+    {
+      "name": "paper_port_recreated_artifacts_bootstrap.zip.part001",
+      "size": 75000000,
+      "sha256": "9bdb6a55666ff9c6386a9730b1632eec52b66bcbc7f48b11bc5a6a5fb7078b03"
+    },
+    {
+      "name": "paper_port_recreated_artifacts_bootstrap.zip.part002",
+      "size": 75000000,
+      "sha256": "c479c7558815d592a46b29e31b9f18d02506bed70f3546d888aae2db4b5d9b38"
+    },
+    {
+      "name": "paper_port_recreated_artifacts_bootstrap.zip.part003",
+      "size": 75000000,
+      "sha256": "d4f33a3be74e14645651a4039cb31bd5ca280b77f5740417e66c8499a1744878"
+    },
+    {
+      "name": "paper_port_recreated_artifacts_bootstrap.zip.part004",
+      "size": 61546001,
+      "sha256": "fb6aab48f77e4d78265b5f75240fba390a3b1abf361d8e2c4c9fbaea7e953322"
+    }
+  ],
+  "raw_base_url": "https://raw.githubusercontent.com/toanthangO20/PoRT_LLM_Unlearning-Experiment/artifact-recreated-bootstrap-v1"
+}
