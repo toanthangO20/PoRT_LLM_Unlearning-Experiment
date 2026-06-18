@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import gc
+import hashlib
 import json
 import re
 import sys
 import time
+import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +16,12 @@ if str(COMMON_DIR) not in sys.path:
 
 from port_generation_baseline_identity_ablation import GenerationBaselineIdentityAblationRunner
 from port_recreated_smoke import env_bool, env_text
+
+
+DEFAULT_RECREATED_ARTIFACT_MANIFEST_URL = (
+    "https://raw.githubusercontent.com/toanthangO20/PoRT_LLM_Unlearning-Experiment/"
+    "artifact-recreated-bootstrap-v1/manifest.json"
+)
 
 
 class PrefixCompilerSourceDiagnosticRunner(GenerationBaselineIdentityAblationRunner):
@@ -38,6 +46,11 @@ class PrefixCompilerSourceDiagnosticRunner(GenerationBaselineIdentityAblationRun
         )
         config["prefix_include_recreated_t5"] = env_bool("PORT_PREFIX_INCLUDE_RECREATED_T5", True)
         config["prefix_extra_t5_models"] = self._parse_extra_t5_models(env_text("PORT_PREFIX_EXTRA_T5_MODELS"))
+        config["auto_download_recreated_artifact"] = env_bool("PORT_AUTO_DOWNLOAD_RECREATED_ARTIFACT", True)
+        config["recreated_artifact_manifest_url"] = env_text(
+            "PORT_RECREATED_ARTIFACT_MANIFEST_URL",
+            DEFAULT_RECREATED_ARTIFACT_MANIFEST_URL,
+        )
         config["scale_run_family"] = "prefix_compiler_source_diagnostic"
         return config
 
@@ -87,13 +100,110 @@ class PrefixCompilerSourceDiagnosticRunner(GenerationBaselineIdentityAblationRun
             artifact_dir = self._extract_zip(candidate_zip, self.run_dir / "recreated_artifact_zip")
             return self._source_from_recreated_artifact_dir(artifact_dir, f"zip_path:{candidate_zip}"), skipped
 
+        if self.config["auto_download_recreated_artifact"]:
+            downloaded_zip = self._download_default_recreated_artifact_zip()
+            artifact_dir = self._extract_zip(downloaded_zip, self.run_dir / "recreated_artifact_zip")
+            return self._source_from_recreated_artifact_dir(
+                artifact_dir,
+                f"auto_download_manifest:{self.config['recreated_artifact_manifest_url']}",
+            ), skipped
+
         skipped.append(
             {
                 "source_id": "recreated_artifact",
-                "reason": "No PORT_RECREATED_ARTIFACT_DIR, PORT_RECREATED_ARTIFACT_ZIP_URL, or recreated artifact zip was found.",
+                "reason": (
+                    "No PORT_RECREATED_ARTIFACT_DIR, PORT_RECREATED_ARTIFACT_ZIP_URL, or recreated artifact zip was found, "
+                    "and PORT_AUTO_DOWNLOAD_RECREATED_ARTIFACT=false."
+                ),
             }
         )
         return None, skipped
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _download_default_recreated_artifact_zip(self) -> Path:
+        manifest_url = self.config["recreated_artifact_manifest_url"]
+        if not manifest_url:
+            raise RuntimeError("PORT_RECREATED_ARTIFACT_MANIFEST_URL is empty.")
+
+        destination = Path("/kaggle/working/paper_port_recreated_artifacts_bootstrap.zip") if self.is_kaggle else self.run_dir / "downloads" / "paper_port_recreated_artifacts_bootstrap.zip"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+
+        manifest_path = destination.with_suffix(destination.suffix + ".manifest.json")
+        print(f"Downloading recreated artifact manifest: {manifest_url}")
+        urllib.request.urlretrieve(manifest_url, manifest_path)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        expected_size = int(manifest["artifact_size"])
+        expected_sha = str(manifest["artifact_sha256"])
+        if destination.exists():
+            actual_size = destination.stat().st_size
+            actual_sha = self._sha256_file(destination) if actual_size == expected_size else None
+            if actual_size == expected_size and actual_sha == expected_sha:
+                print(f"Using existing recreated artifact zip: {destination}")
+                return destination
+            print(f"Existing artifact zip failed validation, rebuilding: {destination}")
+            destination.unlink()
+
+        raw_base_url = manifest["raw_base_url"].rstrip("/")
+        parts_dir = destination.with_suffix(destination.suffix + ".parts")
+        parts_dir.mkdir(parents=True, exist_ok=True)
+
+        chunk_paths = []
+        for index, chunk in enumerate(manifest["chunks"], start=1):
+            chunk_name = chunk["name"]
+            chunk_url = f"{raw_base_url}/{chunk_name}"
+            chunk_path = parts_dir / chunk_name
+            expected_chunk_size = int(chunk["size"])
+            expected_chunk_sha = str(chunk["sha256"])
+
+            needs_download = True
+            if chunk_path.exists() and chunk_path.stat().st_size == expected_chunk_size:
+                needs_download = self._sha256_file(chunk_path) != expected_chunk_sha
+            if needs_download:
+                print(f"Downloading artifact chunk {index}/{len(manifest['chunks'])}: {chunk_url}")
+                urllib.request.urlretrieve(chunk_url, chunk_path)
+
+            actual_chunk_size = chunk_path.stat().st_size
+            actual_chunk_sha = self._sha256_file(chunk_path)
+            if actual_chunk_size != expected_chunk_size or actual_chunk_sha != expected_chunk_sha:
+                raise RuntimeError(
+                    f"Artifact chunk validation failed for {chunk_name}: "
+                    f"size={actual_chunk_size}/{expected_chunk_size} sha={actual_chunk_sha}/{expected_chunk_sha}"
+                )
+            chunk_paths.append(chunk_path)
+
+        print(f"Assembling recreated artifact zip: {destination}")
+        with destination.open("wb") as output:
+            for chunk_path in chunk_paths:
+                with chunk_path.open("rb") as handle:
+                    for block in iter(lambda: handle.read(1024 * 1024), b""):
+                        output.write(block)
+
+        actual_size = destination.stat().st_size
+        actual_sha = self._sha256_file(destination)
+        if actual_size != expected_size or actual_sha != expected_sha:
+            raise RuntimeError(
+                f"Artifact zip validation failed: size={actual_size}/{expected_size} sha={actual_sha}/{expected_sha}"
+            )
+        print(
+            json.dumps(
+                {
+                    "recreated_artifact_zip_path": str(destination),
+                    "artifact_size": actual_size,
+                    "artifact_sha256": actual_sha,
+                    "manifest_url": manifest_url,
+                },
+                indent=2,
+            )
+        )
+        return destination
 
     @staticmethod
     def _source_from_recreated_artifact_dir(artifact_dir: Path, artifact_source: str) -> dict:
