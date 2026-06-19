@@ -53,7 +53,51 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/22_kaggle_paper_port_generation_baseline_identity_ablation.ipynb` | Generation baseline + identity ablation | Đã pass trên Kaggle | Không phải smoke test; `288` rows; identity-prefix/no-rethink khớp raw generation tuyệt đối; compiled-prefix/no-rethink tụt `-0.0625`; không bootstrap/train recreated artifacts; không phải official paper metric |
 | `notebooks/recreated_runs/23_kaggle_paper_port_prefix_compiler_source_diagnostic.ipynb` | Prefix compiler source diagnostic | Đã pass trên Kaggle với auto-download artifact | Không phải smoke test; `288` dataset rows, `864` prediction rows; chạy đủ `raw_direct`, `base_t5`, `recreated_artifact`; recreated artifact vẫn kém raw direct `-0.0243`, nên prefix compiler recreated chưa đủ tốt để full PoRT |
 | `notebooks/recreated_runs/24_kaggle_paper_port_prefix_quality_gate_diagnostic.ipynb` | Prefix quality gate/prompt repair diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` dataset rows, `1152` prediction rows; quality gate sửa được format/valid rate nhưng chưa cứu accuracy; diagnostic còn bị confound vì fallback raw dùng generation seed khác raw direct |
-| `notebooks/recreated_runs/25_kaggle_paper_port_prefix_quality_gate_counterfactual.ipynb` | Prefix quality gate counterfactual diagnostic | Đã tạo, chờ chạy Kaggle | Không phải smoke test; bật `PORT_QUALITY_GATE_REUSE_RAW_FALLBACK=true` để `structure_gate` fallback reuse raw-direct answer/prediction, loại confound seed của notebook `24` |
+| `notebooks/recreated_runs/25_kaggle_paper_port_prefix_quality_gate_counterfactual.ipynb` | Prefix quality gate counterfactual diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` dataset rows, `1152` prediction rows; `structure_gate` đạt `0.2986`, nhỉnh hơn raw `+0.0069`, nhưng reuse raw-direct ở `80.2%` rows nên đây là safety gate diagnostic, chưa phải full PoRT/paper metric |
+
+### Kết quả notebook 25 mới nhất
+
+Notebook `25` đã chạy xong trên Kaggle ở commit `65d85f53825868000f7500e00e685ab7014affb4`, không lỗi cell và không OOM:
+
+- Matrix: `9` jobs x `32` rows = `288` dataset rows.
+- Sources/policies đã chạy: `raw_direct`, `recreated_artifact_compiled_direct`, `recreated_artifact_structure_gate`, `recreated_artifact_repair_gate`.
+- Prediction rows: `1152`.
+- `PORT_QUALITY_GATE_REUSE_RAW_FALLBACK=true`: các row `structure_gate` fallback raw reuse trực tiếp raw-direct answer/prediction.
+- Recreated artifact tự tải từ branch `artifact-recreated-bootstrap-v1`, validate sha256 `546569004ce0f3de8dab85f286341dd0281cea023113f38a819410cbd90e6ce8`.
+- Artifacts đã ghi trên Kaggle: `summary.json`, `all_prefix_quality_gate_predictions.csv`, `prefix_quality_gate_summary_by_job.csv`, `prefix_quality_gate_summary_overall.csv`, `failed_jobs.json`.
+
+Overall summary:
+
+| Source | Correct / Rows | Accuracy | Delta vs raw | Valid rate | Gate pass | Reused raw | Choice coverage |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `raw_direct` | `84/288` | `0.2917` | `0.0000` | `0.9965` | n/a | n/a | `1.0000` |
+| `recreated_artifact_compiled_direct` | `70/288` | `0.2431` | `-0.0486` | `0.9792` | `0.1979` | `0.0000` | `0.3290` |
+| `recreated_artifact_structure_gate` | `86/288` | `0.2986` | `+0.0069` | `0.9965` | `0.1979` | `0.8021` | `1.0000` |
+| `recreated_artifact_repair_gate` | `71/288` | `0.2465` | `-0.0451` | `0.9931` | `0.1979` | `0.0000` | `1.0000` |
+
+Theo variant:
+
+| Variant | raw_direct | compiled_direct | structure_gate | repair_gate |
+| --- | ---: | ---: | ---: | ---: |
+| `original` | `0.2604` | `0.2813` | `0.2708` | `0.2604` |
+| `noise_prefix` | `0.3542` | `0.2292` | `0.3542` | `0.2396` |
+| `composite` | `0.2604` | `0.2188` | `0.2708` | `0.2396` |
+
+Theo domain:
+
+| Domain | raw_direct | structure_gate | Delta |
+| --- | ---: | ---: | ---: |
+| `bio` | `0.2917` | `0.3125` | `+0.0208` |
+| `chem` | `0.2396` | `0.2500` | `+0.0104` |
+| `cyber` | `0.3438` | `0.3333` | `-0.0104` |
+
+Kết luận:
+
+- `structure_gate` counterfactual đã loại confound seed và không còn tụt so với raw trên 288-row sample; tổng accuracy nhỉnh hơn raw `+0.0069`.
+- `noise_prefix` không còn tụt vì gần như toàn bộ rows fallback/reuse raw (`98.96%`), tức gate đang bảo vệ khỏi T5 prefix compiler chứ chưa làm PoRT tốt hơn.
+- T5 prefix compiler vẫn yếu: chỉ `19.8%` compiled prompts pass gate; direct compiled vẫn tụt `-0.0486`.
+- `repair_gate` sửa format nhưng không sửa accuracy, nên không nên ưu tiên.
+- Có thể dùng `structure_gate` làm safety wrapper cho bước recreated PoRT tiếp theo, nhưng không được claim là paper-faithful vì phần lớn rows bỏ qua compiled prefix bằng raw fallback.
 
 ### Kết quả notebook 24 mới nhất
 
@@ -530,14 +574,14 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `25` đã được tạo để kiểm tra lại quality gate theo kiểu counterfactual sau caveat của notebook `24`.
+Notebook `25` đã pass: `structure_gate` counterfactual không còn làm tụt raw trên 288-row diagnostic, nhưng vì reuse raw-direct ở `80.2%` rows nên đây là safety wrapper, không phải bằng chứng prefix compiler đã tốt.
 
 Việc cần làm ngay:
 
 - Không chạy `PORT_MAX_SAMPLES=-1` cho recreated PoRT hiện tại.
 - Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
-- Chạy `notebooks/recreated_runs/25_kaggle_paper_port_prefix_quality_gate_counterfactual.ipynb` trên Kaggle.
-- Đọc `prefix_quality_gate_summary_overall.csv`, đặc biệt `policy_reused_raw_prediction_rate`, `accuracy_minus_raw`, và kết quả `noise_prefix`.
-- Nếu sau khi loại confound mà compiled rows pass gate vẫn không cải thiện, quay lại train/format prefix compiler thay vì full recreated PoRT.
+- Không chạy full paper/full recreated PoRT ngay.
+- Tạo notebook tiếp theo để tích hợp `structure_gate` vào recreated PoRT scale path hiện có (`32` rows/job trước), dùng best classifier/rethink path, và so sánh với notebook `20`/`21`/raw direct.
+- Nếu gated recreated PoRT vẫn không vượt raw hoặc chỉ tương đương raw nhờ fallback, quay lại train/format prefix compiler thay vì tăng lên full dataset.
 - Dừng hướng threshold tuning vì identity đã khớp raw generation, còn compiled-prefix/rethink là phần làm tụt.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
