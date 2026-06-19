@@ -53,6 +53,7 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/22_kaggle_paper_port_generation_baseline_identity_ablation.ipynb` | Generation baseline + identity ablation | Đã pass trên Kaggle | Không phải smoke test; `288` rows; identity-prefix/no-rethink khớp raw generation tuyệt đối; compiled-prefix/no-rethink tụt `-0.0625`; không bootstrap/train recreated artifacts; không phải official paper metric |
 | `notebooks/recreated_runs/23_kaggle_paper_port_prefix_compiler_source_diagnostic.ipynb` | Prefix compiler source diagnostic | Đã pass trên Kaggle với auto-download artifact | Không phải smoke test; `288` dataset rows, `864` prediction rows; chạy đủ `raw_direct`, `base_t5`, `recreated_artifact`; recreated artifact vẫn kém raw direct `-0.0243`, nên prefix compiler recreated chưa đủ tốt để full PoRT |
 | `notebooks/recreated_runs/24_kaggle_paper_port_prefix_quality_gate_diagnostic.ipynb` | Prefix quality gate/prompt repair diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` dataset rows, `1152` prediction rows; quality gate sửa được format/valid rate nhưng chưa cứu accuracy; diagnostic còn bị confound vì fallback raw dùng generation seed khác raw direct |
+| `notebooks/recreated_runs/25_kaggle_paper_port_prefix_quality_gate_counterfactual.ipynb` | Prefix quality gate counterfactual diagnostic | Đã tạo, chờ chạy Kaggle | Không phải smoke test; bật `PORT_QUALITY_GATE_REUSE_RAW_FALLBACK=true` để `structure_gate` fallback reuse raw-direct answer/prediction, loại confound seed của notebook `24` |
 
 ### Kết quả notebook 24 mới nhất
 
@@ -529,14 +530,14 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `24` đã pass và cho thấy quality gate sửa được format nhưng chưa chứng minh được cải thiện accuracy. Kết quả hiện tại còn bị confound vì fallback raw prompt được generate lại bằng seed khác raw direct.
+Notebook `25` đã được tạo để kiểm tra lại quality gate theo kiểu counterfactual sau caveat của notebook `24`.
 
 Việc cần làm ngay:
 
 - Không chạy `PORT_MAX_SAMPLES=-1` cho recreated PoRT hiện tại.
 - Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
-- Sửa diagnostic quality gate để các row `fallback_raw` reuse đúng `raw_direct_answer`/prediction hoặc dùng cùng deterministic top-logit path, tránh so sánh raw prompt dưới seed khác.
-- Rerun notebook `24` hoặc tạo notebook `25` cho counterfactual quality-gate diagnostic.
+- Chạy `notebooks/recreated_runs/25_kaggle_paper_port_prefix_quality_gate_counterfactual.ipynb` trên Kaggle.
+- Đọc `prefix_quality_gate_summary_overall.csv`, đặc biệt `policy_reused_raw_prediction_rate`, `accuracy_minus_raw`, và kết quả `noise_prefix`.
 - Nếu sau khi loại confound mà compiled rows pass gate vẫn không cải thiện, quay lại train/format prefix compiler thay vì full recreated PoRT.
 - Dừng hướng threshold tuning vì identity đã khớp raw generation, còn compiled-prefix/rethink là phần làm tụt.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.

@@ -40,6 +40,7 @@ class PrefixQualityGateDiagnosticRunner(PrefixCompilerSourceDiagnosticRunner):
         config["quality_gate_require_prompt_instruction"] = env_bool("PORT_QUALITY_GATE_REQUIRE_PROMPT_INSTRUCTION", True)
         config["quality_gate_require_answer_instruction"] = env_bool("PORT_QUALITY_GATE_REQUIRE_ANSWER_INSTRUCTION", False)
         config["quality_gate_repair_max_prefix_chars"] = int(env_text("PORT_QUALITY_GATE_REPAIR_MAX_PREFIX_CHARS", "600"))
+        config["quality_gate_reuse_raw_fallback"] = env_bool("PORT_QUALITY_GATE_REUSE_RAW_FALLBACK", False)
         config["scale_run_family"] = "prefix_quality_gate_diagnostic"
         return config
 
@@ -113,6 +114,7 @@ class PrefixQualityGateDiagnosticRunner(PrefixCompilerSourceDiagnosticRunner):
             "require_prompt_instruction": self.config["quality_gate_require_prompt_instruction"],
             "require_answer_instruction": self.config["quality_gate_require_answer_instruction"],
             "repair_max_prefix_chars": self.config["quality_gate_repair_max_prefix_chars"],
+            "reuse_raw_fallback": self.config["quality_gate_reuse_raw_fallback"],
         }
 
     def _build_run_config(self, runtime_script_path: Path, artifact_info: dict, classifier_info: dict) -> dict:
@@ -299,6 +301,9 @@ class PrefixQualityGateDiagnosticRunner(PrefixCompilerSourceDiagnosticRunner):
 
         final_prompts = []
         decisions = []
+        generated_indices = []
+        generated_prompts = []
+        answers = [None] * len(records)
         for idx, item in enumerate(records):
             final_prompt, decision = self._final_prompt_for_policy(
                 policy_name,
@@ -306,12 +311,22 @@ class PrefixQualityGateDiagnosticRunner(PrefixCompilerSourceDiagnosticRunner):
                 compiled_prompts[idx],
                 fallback_flags[idx],
             )
+            reuse_raw_prediction = bool(self.config["quality_gate_reuse_raw_fallback"] and decision["policy_fallback_to_raw"])
+            decision["policy_reused_raw_prediction"] = reuse_raw_prediction
             final_prompts.append(final_prompt)
             decisions.append(decision)
+            if reuse_raw_prediction:
+                answers[idx] = raw_rows[idx].get("raw_direct_answer")
+            else:
+                generated_indices.append(idx)
+                generated_prompts.append(final_prompt)
 
-        self._set_generation_seed(self.config["seed"], job_index, 30 + source_index * 100 + policy_index * 10)
-        answers = self._generate_answers(final_prompts, models, args, port_wmdp)
-        self._clear_cuda_cache()
+        if generated_prompts:
+            self._set_generation_seed(self.config["seed"], job_index, 30 + source_index * 100 + policy_index * 10)
+            generated_answers = self._generate_answers(generated_prompts, models, args, port_wmdp)
+            for generated_idx, answer in zip(generated_indices, generated_answers):
+                answers[generated_idx] = answer
+            self._clear_cuda_cache()
 
         rows = []
         for idx, item in enumerate(records):
@@ -333,6 +348,7 @@ class PrefixQualityGateDiagnosticRunner(PrefixCompilerSourceDiagnosticRunner):
                 "policy_gate_reasons": ";".join(decision["gate_reasons"]),
                 "policy_fallback_to_raw": decision["policy_fallback_to_raw"],
                 "policy_repair_applied": decision["policy_repair_applied"],
+                "policy_reused_raw_prediction": decision["policy_reused_raw_prediction"],
                 "t5_compiled_prompt": compiled_prompts[idx],
                 "compiled_prompt": final_prompts[idx],
                 "raw_direct_answer": raw_rows[idx].get("raw_direct_answer"),
@@ -343,12 +359,22 @@ class PrefixQualityGateDiagnosticRunner(PrefixCompilerSourceDiagnosticRunner):
                 "t5_compiled_prompt_char_len_ratio": compiled_quality["compiled_prompt_char_len_ratio"],
                 **final_quality,
             }
-            row.update(self._choice_fields(port_wmdp, "prediction", answers[idx], item))
+            if decision["policy_reused_raw_prediction"]:
+                row.update(
+                    {
+                        "prediction_answer": raw_rows[idx].get("raw_direct_answer"),
+                        "prediction_choice_letter": raw_rows[idx].get("raw_direct_choice_letter", raw_rows[idx].get("prediction_choice_letter")),
+                        "prediction_predicted_index": raw_index,
+                        "prediction_is_correct": bool(raw_rows[idx].get("raw_direct_is_correct", raw_rows[idx].get("prediction_is_correct", raw_rows[idx].get("is_correct", False)))),
+                    }
+                )
+            else:
+                row.update(self._choice_fields(port_wmdp, "prediction", answers[idx], item))
             row["answer"] = row["prediction_answer"]
             row["choice_letter"] = row["prediction_choice_letter"]
             row["predicted_index"] = row["prediction_predicted_index"]
             row["is_correct"] = row["prediction_is_correct"]
-            row["same_as_raw_index"] = row["prediction_predicted_index"] == raw_index if raw_index is not None else False
+            row["same_as_raw_index"] = True if decision["policy_reused_raw_prediction"] else row["prediction_predicted_index"] == raw_index if raw_index is not None else False
             rows.append(row)
 
         summary = [self._source_summary(rows, policy_source, job)]
@@ -369,6 +395,7 @@ class PrefixQualityGateDiagnosticRunner(PrefixCompilerSourceDiagnosticRunner):
                 "policy_gate_pass_rate": avg("policy_gate_pass"),
                 "policy_fallback_to_raw_rate": avg("policy_fallback_to_raw"),
                 "policy_repair_applied_rate": avg("policy_repair_applied"),
+                "policy_reused_raw_prediction_rate": avg("policy_reused_raw_prediction"),
                 "t5_compiled_prompt_choice_coverage_avg": avg("t5_compiled_prompt_choice_coverage"),
                 "t5_compiled_prompt_has_answer_instruction_rate": avg("t5_compiled_prompt_has_answer_instruction"),
                 "t5_compiled_prompt_char_len_ratio_avg": avg("t5_compiled_prompt_char_len_ratio"),
@@ -391,6 +418,7 @@ class PrefixQualityGateDiagnosticRunner(PrefixCompilerSourceDiagnosticRunner):
             "policy_gate_pass_rate",
             "policy_fallback_to_raw_rate",
             "policy_repair_applied_rate",
+            "policy_reused_raw_prediction_rate",
             "t5_compiled_prompt_choice_coverage_avg",
             "t5_compiled_prompt_has_answer_instruction_rate",
             "t5_compiled_prompt_char_len_ratio_avg",
