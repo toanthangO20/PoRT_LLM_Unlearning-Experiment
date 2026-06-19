@@ -52,6 +52,7 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/21_kaggle_paper_port_recreated_ablation_diagnostics.ipynb` | PoRT recreated ablation diagnostics | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct acc `0.2917`, compiled initial `0.2361`, rethink-all `0.2188`; best threshold final chỉ `0.2188`, nên threshold sweep không cứu được notebook `20` |
 | `notebooks/recreated_runs/22_kaggle_paper_port_generation_baseline_identity_ablation.ipynb` | Generation baseline + identity ablation | Đã pass trên Kaggle | Không phải smoke test; `288` rows; identity-prefix/no-rethink khớp raw generation tuyệt đối; compiled-prefix/no-rethink tụt `-0.0625`; không bootstrap/train recreated artifacts; không phải official paper metric |
 | `notebooks/recreated_runs/23_kaggle_paper_port_prefix_compiler_source_diagnostic.ipynb` | Prefix compiler source diagnostic | Đã pass trên Kaggle với auto-download artifact | Không phải smoke test; `288` dataset rows, `864` prediction rows; chạy đủ `raw_direct`, `base_t5`, `recreated_artifact`; recreated artifact vẫn kém raw direct `-0.0243`, nên prefix compiler recreated chưa đủ tốt để full PoRT |
+| `notebooks/recreated_runs/24_kaggle_paper_port_prefix_quality_gate_diagnostic.ipynb` | Prefix quality gate/prompt repair diagnostic | Đã tạo, chờ chạy Kaggle | Không phải smoke test; tự tải recreated artifact; so sánh `raw_direct` với `recreated_artifact_compiled_direct`, `structure_gate`, `repair_gate`; ghi từng job/policy ra CSV để tránh giữ toàn bộ predictions trong RAM/VRAM |
 
 ### Kết quả notebook 23 mới nhất
 
@@ -493,13 +494,14 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `23` xác nhận auto-download artifact đã ổn, nhưng recreated prefix compiler vẫn chưa đạt: overall kém raw direct `-0.0243`, và riêng `noise_prefix` kém `-0.1042`. Vì vậy chưa chạy full recreated PoRT/full PoRT ngay.
+Notebook `24` đã được tạo để kiểm tra bước khắc phục prefix compiler sau kết quả notebook `23`. Notebook này vẫn là recreated diagnostic, không phải official paper metric.
 
 Việc cần làm ngay:
 
 - Không chạy `PORT_MAX_SAMPLES=-1` cho recreated PoRT hiện tại.
 - Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
-- Tạo notebook `24` để chẩn đoán/khắc phục prefix compiler theo hướng quality gate hoặc prompt-repair: chỉ dùng compiled prompt khi giữ đủ cấu trúc MCQ/answer instruction; nếu không thì fallback về raw prompt. Mục tiêu là chứng minh phần prefix compiler không còn làm tụt so với `raw_direct` trên `original`, `noise_prefix`, `composite`.
-- Notebook `24` vẫn phải ghi rõ là recreated diagnostic, không phải official paper metric.
+- Chạy `notebooks/recreated_runs/24_kaggle_paper_port_prefix_quality_gate_diagnostic.ipynb` trên Kaggle.
+- Đọc `prefix_quality_gate_summary_overall.csv` và so sánh `raw_direct`, `recreated_artifact_compiled_direct`, `recreated_artifact_structure_gate`, `recreated_artifact_repair_gate`.
+- Nếu `structure_gate` hoặc `repair_gate` đạt gần/bằng raw direct và không còn tụt mạnh ở `noise_prefix`, dùng policy đó làm ứng viên cho bước recreated PoRT tiếp theo; nếu vẫn tụt, quay lại train/format prefix compiler thay vì full run.
 - Dừng hướng threshold tuning vì identity đã khớp raw generation, còn compiled-prefix/rethink là phần làm tụt.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
