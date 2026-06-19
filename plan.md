@@ -51,18 +51,17 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/20_kaggle_paper_port_recreated_scale_run.ipynb` | PoRT recreated best-classifier scale run | Đã pass trên Kaggle | Không phải smoke test; `288` rows (`32`/job), valid rate `0.9931`, rethink `0.6771`, overall acc `0.2222`; dùng classifier và answer expansion của notebook `19`; vẫn là recreated, không phải official metric |
 | `notebooks/recreated_runs/21_kaggle_paper_port_recreated_ablation_diagnostics.ipynb` | PoRT recreated ablation diagnostics | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct acc `0.2917`, compiled initial `0.2361`, rethink-all `0.2188`; best threshold final chỉ `0.2188`, nên threshold sweep không cứu được notebook `20` |
 | `notebooks/recreated_runs/22_kaggle_paper_port_generation_baseline_identity_ablation.ipynb` | Generation baseline + identity ablation | Đã pass trên Kaggle | Không phải smoke test; `288` rows; identity-prefix/no-rethink khớp raw generation tuyệt đối; compiled-prefix/no-rethink tụt `-0.0625`; không bootstrap/train recreated artifacts; không phải official paper metric |
-| `notebooks/recreated_runs/23_kaggle_paper_port_prefix_compiler_source_diagnostic.ipynb` | Prefix compiler source diagnostic | Đã pass trên Kaggle, đã thêm auto-download artifact | Không phải smoke test; `288` dataset rows, `576` prediction rows; `base_t5` kém raw direct `-0.0347`; lần chạy trước skipped recreated artifact, bản hiện tại tự tải artifact chunks từ branch `artifact-recreated-bootstrap-v1` |
+| `notebooks/recreated_runs/23_kaggle_paper_port_prefix_compiler_source_diagnostic.ipynb` | Prefix compiler source diagnostic | Đã pass trên Kaggle với auto-download artifact | Không phải smoke test; `288` dataset rows, `864` prediction rows; chạy đủ `raw_direct`, `base_t5`, `recreated_artifact`; recreated artifact vẫn kém raw direct `-0.0243`, nên prefix compiler recreated chưa đủ tốt để full PoRT |
 
 ### Kết quả notebook 23 mới nhất
 
-Notebook `23` đã chạy xong trên Kaggle ở commit `5056764338154f01873576b1e4c49d67b41cfef4`, không lỗi cell và không OOM:
+Notebook `23` đã chạy xong trên Kaggle ở commit `672f284382a17d3c75832a4e4bebd56b73e0735a`, không lỗi cell và không OOM:
 
 - Matrix: `9` jobs x `32` rows = `288` dataset rows.
-- Sources đã chạy: `raw_direct`, `base_t5`.
-- Prediction rows: `576`.
+- Sources đã chạy: `raw_direct`, `base_t5`, `recreated_artifact`.
+- Prediction rows: `864`.
 - `base_t5`: `google/flan-t5-small`.
-- `recreated_artifact` bị skipped vì không có `PORT_RECREATED_ARTIFACT_DIR`, `PORT_RECREATED_ARTIFACT_ZIP_URL`, hoặc recreated artifact zip trong Kaggle session.
-- Sau lần chạy này, đã tạo branch artifact ổn định `artifact-recreated-bootstrap-v1` chứa các chunk của `paper_port_recreated_artifacts_bootstrap.zip` và cập nhật notebook `23` để tự tải/ghép zip vào `/kaggle/working/paper_port_recreated_artifacts_bootstrap.zip`.
+- `recreated_artifact`: tự tải từ branch artifact ổn định `artifact-recreated-bootstrap-v1`, ghép zip vào `/kaggle/working/paper_port_recreated_artifacts_bootstrap.zip`, validate chunk/full sha256, rồi extract và chạy source recreated.
 - Manifest URL: `https://raw.githubusercontent.com/toanthangO20/PoRT_LLM_Unlearning-Experiment/artifact-recreated-bootstrap-v1/manifest.json`.
 - Artifact sha256: `546569004ce0f3de8dab85f286341dd0281cea023113f38a819410cbd90e6ce8`.
 - Artifacts đã ghi trên Kaggle: `summary.json`, `all_prefix_compiler_predictions.csv`, `prefix_compiler_summary_by_job.csv`, `prefix_compiler_summary_overall.csv`, `failed_jobs.json`.
@@ -73,22 +72,31 @@ Overall summary:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `raw_direct` | `84/288` | `0.2917` | `0.9965` | `1.0000` | `1.0000` | `0.3403` |
 | `base_t5` | `74/288` | `0.2569` | `0.9826` | `0.3924` | `0.2812` | `0.0903` |
+| `recreated_artifact` | `77/288` | `0.2674` | `0.9757` | `0.4028` | `0.3229` | `0.0903` |
 
 Theo variant:
 
-| Variant | raw_direct | base_t5 | Delta |
-| --- | ---: | ---: | ---: |
-| `original` | `0.2604` | `0.2604` | `0.0000` |
-| `noise_prefix` | `0.3542` | `0.2188` | `-0.1354` |
-| `composite` | `0.2604` | `0.2917` | `+0.0313` |
+| Variant | raw_direct | base_t5 | recreated_artifact | Recreated delta |
+| --- | ---: | ---: | ---: | ---: |
+| `original` | `0.2604` | `0.2604` | `0.2812` | `+0.0208` |
+| `noise_prefix` | `0.3542` | `0.2188` | `0.2500` | `-0.1042` |
+| `composite` | `0.2604` | `0.2917` | `0.2708` | `+0.0104` |
+
+Theo domain:
+
+| Domain | raw_direct | base_t5 | recreated_artifact | Recreated delta |
+| --- | ---: | ---: | ---: | ---: |
+| `bio` | `0.2917` | `0.2708` | `0.2917` | `0.0000` |
+| `chem` | `0.2396` | `0.1979` | `0.1667` | `-0.0729` |
+| `cyber` | `0.3438` | `0.3021` | `0.3438` | `0.0000` |
 
 Kết luận:
 
 - `base_t5` không phải prefix compiler đủ tốt: accuracy tổng thấp hơn raw direct `-0.0347`, valid rate thấp hơn, và chỉ giữ cùng predicted index với raw direct `39.2%`.
-- Tụt chính nằm ở `noise_prefix`, đặc biệt `noise_prefix/chem` (`0.3438 -> 0.1562`) và `noise_prefix/cyber` (`0.5000 -> 0.2812`).
-- Prefix do `base_t5` sinh thường làm mất cấu trúc MCQ: average choice coverage chỉ `0.2812` thay vì `1.0`, answer instruction chỉ `0.0903`.
-- Vì recreated artifact không được cung cấp nên notebook `23` chưa trả lời được recreated T5 đã train ở notebook `16` có tốt hơn base T5 hay không.
-- Chưa có cơ sở chạy full recreated PoRT; cần chạy lại diagnostic với recreated artifact zip/dir trước.
+- `recreated_artifact` tốt hơn `base_t5` một chút (`0.2674` so với `0.2569`) nhưng vẫn thấp hơn raw direct `-0.0243`, valid rate cũng thấp hơn (`0.9757` so với `0.9965`).
+- Tụt chính vẫn nằm ở `noise_prefix`: raw direct `0.3542`, recreated artifact `0.2500`, delta `-0.1042`.
+- Prefix do T5 sinh vẫn làm mất cấu trúc MCQ: recreated choice coverage chỉ `0.3229` thay vì `1.0`, answer instruction chỉ `0.0903`.
+- Chưa có cơ sở chạy full recreated PoRT. Nút thắt hiện tại là chất lượng prefix compiler/prompt preservation, không còn là thiếu artifact hoặc lỗi auto-download.
 
 ### Kết quả notebook 22 mới nhất
 
@@ -485,13 +493,13 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `23` xác nhận `google/flan-t5-small` base T5 không đủ tốt làm prefix compiler, nhất là trên `noise_prefix`. Recreated artifact chưa được test trong lần chạy notebook `23` trước vì Kaggle session không có artifact dir/zip. Bản notebook `23` hiện tại đã tự tải artifact chunks từ GitHub branch riêng, nên cần chạy lại để đo source `recreated_artifact`.
+Notebook `23` xác nhận auto-download artifact đã ổn, nhưng recreated prefix compiler vẫn chưa đạt: overall kém raw direct `-0.0243`, và riêng `noise_prefix` kém `-0.1042`. Vì vậy chưa chạy full recreated PoRT/full PoRT ngay.
 
 Việc cần làm ngay:
 
 - Không chạy `PORT_MAX_SAMPLES=-1` cho recreated PoRT hiện tại.
 - Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
-- Chạy lại `notebooks/recreated_runs/23_kaggle_paper_port_prefix_compiler_source_diagnostic.ipynb` trên Kaggle; notebook sẽ tự tải artifact chunks, ghép zip vào `/kaggle/working/paper_port_recreated_artifacts_bootstrap.zip`, validate sha256, rồi chạy thêm source `recreated_artifact`.
-- Đọc lại `prefix_compiler_summary_overall.csv` để so sánh `raw_direct`, `base_t5`, và `recreated_artifact`.
+- Tạo notebook `24` để chẩn đoán/khắc phục prefix compiler theo hướng quality gate hoặc prompt-repair: chỉ dùng compiled prompt khi giữ đủ cấu trúc MCQ/answer instruction; nếu không thì fallback về raw prompt. Mục tiêu là chứng minh phần prefix compiler không còn làm tụt so với `raw_direct` trên `original`, `noise_prefix`, `composite`.
+- Notebook `24` vẫn phải ghi rõ là recreated diagnostic, không phải official paper metric.
 - Dừng hướng threshold tuning vì identity đã khớp raw generation, còn compiled-prefix/rethink là phần làm tụt.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
