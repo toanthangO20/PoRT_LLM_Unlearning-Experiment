@@ -54,7 +54,65 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/23_kaggle_paper_port_prefix_compiler_source_diagnostic.ipynb` | Prefix compiler source diagnostic | Đã pass trên Kaggle với auto-download artifact | Không phải smoke test; `288` dataset rows, `864` prediction rows; chạy đủ `raw_direct`, `base_t5`, `recreated_artifact`; recreated artifact vẫn kém raw direct `-0.0243`, nên prefix compiler recreated chưa đủ tốt để full PoRT |
 | `notebooks/recreated_runs/24_kaggle_paper_port_prefix_quality_gate_diagnostic.ipynb` | Prefix quality gate/prompt repair diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` dataset rows, `1152` prediction rows; quality gate sửa được format/valid rate nhưng chưa cứu accuracy; diagnostic còn bị confound vì fallback raw dùng generation seed khác raw direct |
 | `notebooks/recreated_runs/25_kaggle_paper_port_prefix_quality_gate_counterfactual.ipynb` | Prefix quality gate counterfactual diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` dataset rows, `1152` prediction rows; `structure_gate` đạt `0.2986`, nhỉnh hơn raw `+0.0069`, nhưng reuse raw-direct ở `80.2%` rows nên đây là safety gate diagnostic, chưa phải full PoRT/paper metric |
-| `notebooks/recreated_runs/26_kaggle_paper_port_recreated_structure_gate_scale_run.ipynb` | Recreated PoRT structure-gate scale path | Đã tạo, chờ chạy Kaggle | Không phải smoke test; tích hợp `structure_gate` vào đường chạy recreated PoRT thật: T5 compile -> structure gate -> best classifier -> rethink; mặc định `32` rows/job, auto-download artifact vào `/kaggle/working`, không dùng Kaggle input |
+| `notebooks/recreated_runs/26_kaggle_paper_port_recreated_structure_gate_scale_run.ipynb` | Recreated PoRT structure-gate scale path | Đã pass trên Kaggle | Không phải smoke test; `288` rows; overall acc `0.2222`, valid `0.9965`, rethink `0.7222`; structure gate pass `0.1632`, fallback raw `0.8368`; không cải thiện notebook `20` và thấp hơn raw direct notebook `21` |
+
+### Kết quả notebook 26 mới nhất
+
+Notebook `26` đã chạy xong trên Kaggle ở commit `a50323a95fdc4d0683aee90cefbb0d9c7c8dce4d`, không lỗi cell và không OOM:
+
+- Matrix: `9` jobs x `32` rows = `288` dataset rows.
+- Mode: `PORT_ARTIFACT_MODE=recreated`.
+- Artifact: auto-download recreated artifact từ branch `artifact-recreated-bootstrap-v1`.
+- Path thật đã test: T5 compile -> `structure_gate` -> best TF-IDF post-judge classifier -> rethink.
+- Khác notebook `25`: fallback raw không reuse raw-direct prediction; fallback rows vẫn đi qua generate/post-judge/rethink như recreated PoRT thật.
+- Classifier held-out test: accuracy `0.9286`, macro F1 `0.9074`.
+- Artifacts đã ghi trên Kaggle: `artifact_audit.json`, `run_config.json`, `summary.json`, `matrix_summary.csv/json`, `summary_by_variant_domain.csv/json`, `all_predictions.csv`, `failed_jobs.json`.
+
+Overall summary:
+
+| Metric | Value |
+| --- | ---: |
+| Rows | `288` |
+| Accuracy | `0.2222` |
+| Valid predictions rate | `0.9965` |
+| Rethink rate | `0.7222` |
+| Post-judge positive rate | `0.3229` |
+| Structure gate pass rate | `0.1632` |
+| Structure gate fallback-to-raw rate | `0.8368` |
+| T5 compiled choice coverage avg | `0.3082` |
+| Gated prompt choice coverage avg | `1.0000` |
+
+Theo variant/domain:
+
+| Variant | Domain | Accuracy | Valid | Rethink | Gate pass | Fallback raw | T5 choice coverage |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `original` | `bio` | `0.2188` | `1.0000` | `0.6563` | `0.0938` | `0.9063` | `0.2266` |
+| `original` | `chem` | `0.3438` | `1.0000` | `0.6563` | `0.0313` | `0.9688` | `0.2422` |
+| `original` | `cyber` | `0.2500` | `1.0000` | `0.8438` | `0.0938` | `0.9063` | `0.2109` |
+| `noise_prefix` | `bio` | `0.1250` | `1.0000` | `0.6250` | `0.0000` | `1.0000` | `0.1250` |
+| `noise_prefix` | `chem` | `0.1563` | `1.0000` | `0.8125` | `0.0000` | `1.0000` | `0.0469` |
+| `noise_prefix` | `cyber` | `0.2500` | `0.9688` | `0.8438` | `0.0313` | `0.9688` | `0.0859` |
+| `composite` | `bio` | `0.2500` | `1.0000` | `0.7813` | `0.3750` | `0.6250` | `0.5469` |
+| `composite` | `chem` | `0.1563` | `1.0000` | `0.5938` | `0.5000` | `0.5000` | `0.6016` |
+| `composite` | `cyber` | `0.2500` | `1.0000` | `0.6875` | `0.3438` | `0.6563` | `0.6875` |
+
+Comparison:
+
+| Reference | Accuracy | Notes |
+| --- | ---: | --- |
+| Notebook `20` recreated scale | `0.2222` | Notebook `26` ties old recreated scale, no quality gain |
+| Notebook `21` raw direct generation | `0.2917` | Notebook `26` is `-0.0694` below raw |
+| Notebook `21` compiled initial | `0.2361` | Notebook `26` is lower despite structure gate |
+| Notebook `21` rethink-all | `0.2188` | Notebook `26` is almost the same as rethink-all |
+| Notebook `25` structure-gate counterfactual | `0.2986` | Notebook `25` reused raw prediction on `80.2%` rows, so it was only a safety-gate counterfactual |
+
+Kết luận:
+
+- `structure_gate` sửa được format: gated prompt choice coverage đạt `1.0`.
+- `structure_gate` không cải thiện recreated PoRT thật: overall accuracy vẫn `0.2222`, bằng notebook `20`.
+- Gate pass rất thấp (`16.3%`), nhất là `noise_prefix` gần như luôn fallback raw.
+- Vì fallback raw vẫn đi qua classifier/rethink, accuracy tụt gần mức `rethink-all`; đây là tín hiệu rằng post-judge/rethink path đang làm hỏng cả raw fallback, không chỉ T5 prefix compiler.
+- Chưa có cơ sở chạy full recreated PoRT hoặc full paper PoRT.
 
 ### Kết quả notebook 25 mới nhất
 
@@ -575,18 +633,22 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `26` đã được tạo để đưa `structure_gate` vào recreated PoRT scale path thật. Khác notebook `25`, các row fallback raw không reuse raw-direct prediction; chúng được generate và post-judge/rethink qua cùng path như recreated PoRT.
+Notebook `26` đã xác nhận `structure_gate` trong đường chạy recreated PoRT thật không cải thiện chất lượng. Overall accuracy vẫn `0.2222`, bằng notebook `20`, thấp hơn raw direct notebook `21` (`0.2917`), và gần với `rethink-all` (`0.2188`). Vì fallback raw không reuse raw-direct prediction nhưng vẫn tụt mạnh sau classifier/rethink, vấn đề hiện không chỉ là T5 prefix compiler mà còn là post-judge/rethink path đang làm hỏng cả raw fallback.
 
 Việc cần làm ngay:
 
 - Không chạy `PORT_MAX_SAMPLES=-1` cho recreated PoRT hiện tại.
 - Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
 - Không chạy full paper/full recreated PoRT ngay.
-- Chạy notebook `26` trên Kaggle với mặc định `32` rows/job.
-- So sánh notebook `26` với:
-  - notebook `20`: recreated PoRT scale cũ, overall acc `0.2222`;
-  - notebook `21`: raw direct `0.2917`, compiled initial `0.2361`, rethink-all `0.2188`;
-  - notebook `25`: structure-gate counterfactual `0.2986`, nhưng reuse raw prediction `80.2%`.
-- Nếu gated recreated PoRT vẫn không vượt raw hoặc chỉ tương đương raw nhờ fallback, quay lại train/format prefix compiler thay vì tăng lên full dataset.
-- Dừng hướng threshold tuning vì identity đã khớp raw generation, còn compiled-prefix/rethink là phần làm tụt.
+- Không tiếp tục scale `structure_gate` hiện tại vì notebook `26` đã không vượt notebook `20`.
+- Tạo notebook diagnostic kế tiếp, đề xuất `notebooks/recreated_runs/27_kaggle_paper_port_postjudge_rethink_oracle_diagnostic.ipynb`, chạy `32` rows/job và so sánh tối thiểu:
+  - `raw_direct_generation`;
+  - raw prompt qua post-judge nhưng `no_rethink`;
+  - raw prompt qua post-judge với selective rethink hiện tại;
+  - raw prompt với `rethink_all`;
+  - compiled/structure-gated prompt với `no_rethink`;
+  - compiled/structure-gated prompt với selective rethink;
+  - oracle row-level chọn tốt hơn giữa initial và rethink để đo upper bound của routing.
+- Mục tiêu notebook `27`: tách rõ lỗi nằm ở prefix compiler, classifier routing, hay bản thân rethink generation. Nếu oracle upper bound vẫn thấp, dừng hướng rethink hiện tại; nếu oracle cao nhưng selective thấp, cần train lại/reroute post-judge trên generated-answer context thay vì tiếp tục threshold sweep.
+- Chỉ sau khi notebook `27` chứng minh có upper bound đáng kể mới quay lại train/format prefix compiler; nếu không thì hướng recreated PoRT hiện tại không đáng full run.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
