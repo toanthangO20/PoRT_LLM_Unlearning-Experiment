@@ -55,6 +55,7 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/24_kaggle_paper_port_prefix_quality_gate_diagnostic.ipynb` | Prefix quality gate/prompt repair diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` dataset rows, `1152` prediction rows; quality gate sửa được format/valid rate nhưng chưa cứu accuracy; diagnostic còn bị confound vì fallback raw dùng generation seed khác raw direct |
 | `notebooks/recreated_runs/25_kaggle_paper_port_prefix_quality_gate_counterfactual.ipynb` | Prefix quality gate counterfactual diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` dataset rows, `1152` prediction rows; `structure_gate` đạt `0.2986`, nhỉnh hơn raw `+0.0069`, nhưng reuse raw-direct ở `80.2%` rows nên đây là safety gate diagnostic, chưa phải full PoRT/paper metric |
 | `notebooks/recreated_runs/26_kaggle_paper_port_recreated_structure_gate_scale_run.ipynb` | Recreated PoRT structure-gate scale path | Đã pass trên Kaggle | Không phải smoke test; `288` rows; overall acc `0.2222`, valid `0.9965`, rethink `0.7222`; structure gate pass `0.1632`, fallback raw `0.8368`; không cải thiện notebook `20` và thấp hơn raw direct notebook `21` |
+| `notebooks/recreated_runs/27_kaggle_paper_port_postjudge_rethink_oracle_diagnostic.ipynb` | Post-judge/rethink oracle diagnostic | Đã tạo, chờ chạy Kaggle | Không phải smoke test; tách raw direct, raw post-judge no-rethink/selective/rethink-all, compiled và structure-gated no-rethink/selective, plus oracle row-level giữa initial/rethink; mặc định `32` rows/job |
 
 ### Kết quả notebook 26 mới nhất
 
@@ -641,7 +642,7 @@ Việc cần làm ngay:
 - Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
 - Không chạy full paper/full recreated PoRT ngay.
 - Không tiếp tục scale `structure_gate` hiện tại vì notebook `26` đã không vượt notebook `20`.
-- Tạo notebook diagnostic kế tiếp, đề xuất `notebooks/recreated_runs/27_kaggle_paper_port_postjudge_rethink_oracle_diagnostic.ipynb`, chạy `32` rows/job và so sánh tối thiểu:
+- Chạy notebook diagnostic `notebooks/recreated_runs/27_kaggle_paper_port_postjudge_rethink_oracle_diagnostic.ipynb` trên Kaggle với mặc định `32` rows/job và so sánh tối thiểu:
   - `raw_direct_generation`;
   - raw prompt qua post-judge nhưng `no_rethink`;
   - raw prompt qua post-judge với selective rethink hiện tại;
