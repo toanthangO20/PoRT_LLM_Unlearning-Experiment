@@ -625,6 +625,52 @@ class PostjudgeRethinkOracleDiagnosticRunner(RecreatedStructureGateScaleRunner):
             / job["wmdp_set"]
         )
 
+    @staticmethod
+    def _preflight_accelerator(device: str) -> None:
+        if not str(device).startswith("cuda"):
+            print(f"CUDA preflight skipped because PORT_DEVICE={device!r}.")
+            return
+
+        import torch
+
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                f"PORT_DEVICE={device!r} requests CUDA, but torch.cuda.is_available() is false. "
+                "On Kaggle, enable a GPU accelerator or set PORT_DEVICE=cpu only for tiny debug runs."
+            )
+
+        torch_device = torch.device(device)
+        device_index = 0 if torch_device.index is None else int(torch_device.index)
+        name = torch.cuda.get_device_name(device_index)
+        capability = torch.cuda.get_device_capability(device_index)
+        print(
+            "CUDA preflight:",
+            json.dumps(
+                {
+                    "device": str(torch_device),
+                    "name": name,
+                    "capability": f"sm_{capability[0]}{capability[1]}",
+                    "torch": torch.__version__,
+                    "torch_cuda": torch.version.cuda,
+                },
+                indent=2,
+            ),
+        )
+        try:
+            probe = torch.ones((1,), device=torch_device)
+            probe = probe + 1
+            torch.cuda.synchronize(device_index)
+            del probe
+        except Exception as exc:
+            raise RuntimeError(
+                "CUDA preflight failed before model loading. The installed PyTorch/CUDA build cannot run kernels "
+                f"on this Kaggle GPU ({name}, sm_{capability[0]}{capability[1]}). This commonly happens when Kaggle "
+                "assigns an older GPU such as P100/Pascal while the runtime torch wheel was built without kernels "
+                "for that architecture. Switch the notebook accelerator to a supported GPU, preferably T4 as used "
+                "by the prior successful runs, or install a PyTorch build that explicitly supports this GPU. "
+                "Do not rerun full notebook 27 on this accelerator until this one-line CUDA probe passes."
+            ) from exc
+
     def _write_summary_artifacts(
         self,
         run_config: dict,
@@ -708,6 +754,7 @@ class PostjudgeRethinkOracleDiagnosticRunner(RecreatedStructureGateScaleRunner):
                 existing_jobs[job_index] = existing
 
         if len(existing_jobs) != len(matrix_jobs):
+            self._preflight_accelerator(str(base_args.device))
             start_load = time.perf_counter()
             models = port_wmdp.setup_all_models(base_args)
             model_load_seconds = time.perf_counter() - start_load
