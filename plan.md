@@ -55,7 +55,7 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/24_kaggle_paper_port_prefix_quality_gate_diagnostic.ipynb` | Prefix quality gate/prompt repair diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` dataset rows, `1152` prediction rows; quality gate sửa được format/valid rate nhưng chưa cứu accuracy; diagnostic còn bị confound vì fallback raw dùng generation seed khác raw direct |
 | `notebooks/recreated_runs/25_kaggle_paper_port_prefix_quality_gate_counterfactual.ipynb` | Prefix quality gate counterfactual diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` dataset rows, `1152` prediction rows; `structure_gate` đạt `0.2986`, nhỉnh hơn raw `+0.0069`, nhưng reuse raw-direct ở `80.2%` rows nên đây là safety gate diagnostic, chưa phải full PoRT/paper metric |
 | `notebooks/recreated_runs/26_kaggle_paper_port_recreated_structure_gate_scale_run.ipynb` | Recreated PoRT structure-gate scale path | Đã pass trên Kaggle | Không phải smoke test; `288` rows; overall acc `0.2222`, valid `0.9965`, rethink `0.7222`; structure gate pass `0.1632`, fallback raw `0.8368`; không cải thiện notebook `20` và thấp hơn raw direct notebook `21` |
-| `notebooks/recreated_runs/27_kaggle_paper_port_postjudge_rethink_oracle_diagnostic.ipynb` | Post-judge/rethink oracle diagnostic | Đã tạo, chờ chạy Kaggle | Không phải smoke test; tách raw direct, raw post-judge no-rethink/selective/rethink-all, compiled và structure-gated no-rethink/selective, plus oracle row-level giữa initial/rethink; mặc định `32` rows/job |
+| `notebooks/recreated_runs/27_kaggle_paper_port_postjudge_rethink_oracle_diagnostic.ipynb` | Post-judge/rethink oracle diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct `0.2917`, raw selective `0.1840`, raw oracle `0.4271`, structure-gated selective `0.1944`, structure-gated oracle `0.4063`; oracle cao nhưng router/selective làm tụt mạnh |
 
 ### Kết quả notebook 26 mới nhất
 
@@ -114,6 +114,34 @@ Kết luận:
 - Gate pass rất thấp (`16.3%`), nhất là `noise_prefix` gần như luôn fallback raw.
 - Vì fallback raw vẫn đi qua classifier/rethink, accuracy tụt gần mức `rethink-all`; đây là tín hiệu rằng post-judge/rethink path đang làm hỏng cả raw fallback, không chỉ T5 prefix compiler.
 - Chưa có cơ sở chạy full recreated PoRT hoặc full paper PoRT.
+
+### Kết quả notebook 27 mới nhất
+
+Notebook `27` đã chạy xong trên Kaggle ở commit `3c9cf86fccfc71351e11a932df14e84dc9ae9e00`, không lỗi cell sau khi chạy trên GPU tương thích:
+
+- Matrix: `9` jobs x `32` rows = `288` dataset rows.
+- Mode: `PORT_ARTIFACT_MODE=recreated`.
+- Diagnostic: raw direct, raw post-judge/no-rethink, raw selective rethink, raw rethink-all, compiled/structure-gated no-rethink/selective/rethink-all, và oracle row-level giữa initial/rethink.
+- Classifier held-out test: accuracy `0.9286`, macro F1 `0.9074`.
+- Artifacts đã ghi trên Kaggle: `artifact_audit.json`, `run_config.json`, `summary.json`, `all_postjudge_rethink_oracle_predictions.csv`, `postjudge_rethink_oracle_summary_by_job.csv`, `postjudge_rethink_oracle_summary_overall.csv`, `failed_jobs.json`.
+
+Overall summary khóa:
+
+| Method | Accuracy | Delta vs raw direct |
+| --- | ---: | ---: |
+| `raw_direct_generation` | `0.2917` | `0.0000` |
+| `raw_selective_rethink` | `0.1840` | `-0.1076` |
+| `raw_oracle_initial_vs_rethink` | `0.4271` | `+0.1354` |
+| `structure_gated_selective_rethink` | `0.1944` | `-0.0972` |
+| `structure_gated_oracle_initial_vs_rethink` | `0.4063` | `+0.1146` |
+
+Kết luận:
+
+- Rethink generation có upper bound hữu ích: raw oracle đạt `0.4271`, cao hơn raw direct `+0.1354`.
+- Selective routing hiện rất xấu: raw selective chỉ `0.1840`, thấp hơn raw direct `-0.1076` và thấp hơn oracle `-0.2431`.
+- Structure gate không cứu được router: structure-gated selective chỉ `0.1944`, còn oracle của nó vẫn cao `0.4063`.
+- Điều này xác nhận vấn đề chính hiện là routing/post-judge semantics, không phải chỉ là prefix compiler hay thiếu threshold sweep.
+- Weak classifier recreated được train với proxy `label=1` cho WMDP correct/sensitive answer và `label=0` cho distractor/safe answer. Vì pipeline selective đang giữ lại `label==0` và rethink phần còn lại, nó phù hợp với hướng "avoid sensitive answer" nhưng làm tụt accuracy metric. Nếu mục tiêu diagnostic là tối đa hóa correctness, cần đảo/đổi routing objective thay vì tiếp tục dùng điều kiện paper-path hiện tại.
 
 ### Kết quả notebook 25 mới nhất
 
@@ -634,7 +662,7 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `26` đã xác nhận `structure_gate` trong đường chạy recreated PoRT thật không cải thiện chất lượng. Overall accuracy vẫn `0.2222`, bằng notebook `20`, thấp hơn raw direct notebook `21` (`0.2917`), và gần với `rethink-all` (`0.2188`). Vì fallback raw không reuse raw-direct prediction nhưng vẫn tụt mạnh sau classifier/rethink, vấn đề hiện không chỉ là T5 prefix compiler mà còn là post-judge/rethink path đang làm hỏng cả raw fallback.
+Notebook `27` đã xác nhận rethink generation có upper bound đáng kể nhưng selective routing hiện tại chọn sai. Raw direct đạt `0.2917`, raw selective chỉ `0.1840`, trong khi raw oracle đạt `0.4271`. Structure-gated selective cũng thấp (`0.1944`) còn structure-gated oracle cao (`0.4063`). Vấn đề chính hiện là semantics/routing của post-judge, không phải chỉ là T5 prefix compiler hay threshold.
 
 Việc cần làm ngay:
 
@@ -642,14 +670,13 @@ Việc cần làm ngay:
 - Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
 - Không chạy full paper/full recreated PoRT ngay.
 - Không tiếp tục scale `structure_gate` hiện tại vì notebook `26` đã không vượt notebook `20`.
-- Chạy notebook diagnostic `notebooks/recreated_runs/27_kaggle_paper_port_postjudge_rethink_oracle_diagnostic.ipynb` trên Kaggle với mặc định `32` rows/job và so sánh tối thiểu:
-  - `raw_direct_generation`;
-  - raw prompt qua post-judge nhưng `no_rethink`;
-  - raw prompt qua post-judge với selective rethink hiện tại;
-  - raw prompt với `rethink_all`;
-  - compiled/structure-gated prompt với `no_rethink`;
-  - compiled/structure-gated prompt với selective rethink;
-  - oracle row-level chọn tốt hơn giữa initial và rethink để đo upper bound của routing.
-- Mục tiêu notebook `27`: tách rõ lỗi nằm ở prefix compiler, classifier routing, hay bản thân rethink generation. Nếu oracle upper bound vẫn thấp, dừng hướng rethink hiện tại; nếu oracle cao nhưng selective thấp, cần train lại/reroute post-judge trên generated-answer context thay vì tiếp tục threshold sweep.
-- Chỉ sau khi notebook `27` chứng minh có upper bound đáng kể mới quay lại train/format prefix compiler; nếu không thì hướng recreated PoRT hiện tại không đáng full run.
+- Không tiếp tục threshold sweep theo điều kiện hiện tại (`keep label==0, rethink else`) vì notebook `27` đã cho thấy selective routing thấp hơn raw rất nhiều.
+- Next diagnostic nên là notebook `28` nhỏ, cùng `32` rows/job, để test routing semantics:
+  - current paper-style route: keep `label==0`, rethink else;
+  - inverted correctness route: keep `label==1`, rethink else;
+  - confidence-only variants nếu cần;
+  - oracle-compatible routing stats theo raw và structure-gated prompts.
+- Nếu inverted route tiến gần raw oracle hoặc ít nhất vượt raw direct, hướng tiếp theo là đổi/retrain post-judge theo objective correctness-routing cho recreated diagnostic.
+- Nếu inverted route vẫn thấp dù oracle cao, cần train một router mới trực tiếp dự đoán `initial_wrong_and_rethink_correct` hoặc `rethink_improves_answer`, thay vì dùng weak answer-correctness classifier làm post-judge.
+- Chưa quay lại train/format prefix compiler cho tới khi post-judge routing được sửa, vì structure gate đã cho thấy prompt format không phải bottleneck chính.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
