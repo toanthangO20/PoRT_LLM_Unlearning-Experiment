@@ -57,7 +57,8 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/26_kaggle_paper_port_recreated_structure_gate_scale_run.ipynb` | Recreated PoRT structure-gate scale path | Đã pass trên Kaggle | Không phải smoke test; `288` rows; overall acc `0.2222`, valid `0.9965`, rethink `0.7222`; structure gate pass `0.1632`, fallback raw `0.8368`; không cải thiện notebook `20` và thấp hơn raw direct notebook `21` |
 | `notebooks/recreated_runs/27_kaggle_paper_port_postjudge_rethink_oracle_diagnostic.ipynb` | Post-judge/rethink oracle diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct `0.2917`, raw selective `0.1840`, raw oracle `0.4271`, structure-gated selective `0.1944`, structure-gated oracle `0.4063`; oracle cao nhưng router/selective làm tụt mạnh |
 | `notebooks/recreated_runs/28_kaggle_paper_port_postjudge_routing_semantics_diagnostic.ipynb` | Post-judge routing semantics diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct `0.2917`, current route `0.1840`, inverted route + conf `0.3125`, inverted route no-conf `0.4236`, raw oracle `0.4271`; kết luận chính là routing hiện tại đang đảo semantics |
-| `notebooks/recreated_runs/29_kaggle_paper_port_recreated_raw_inverted_route_scale_run.ipynb` | Recreated raw inverted-route scale path | Đã tạo, chờ chạy Kaggle | Không phải smoke test; `32` rows/job; áp dụng deployable route tốt nhất từ notebook `28`: raw prompts, keep initial khi `postjudge label == 1`, bỏ confidence gate, rethink otherwise |
+| `notebooks/recreated_runs/29_kaggle_paper_port_recreated_raw_inverted_route_scale_run.ipynb` | Recreated raw inverted-route scale path | Đã pass trên Kaggle | Không phải smoke test; `288` rows; route deployable `raw_route_inverted_keep_label1_no_conf`; overall acc `0.4097`, valid `1.0000`, rethink `0.6632`; vượt notebook `20` `+0.1875` và raw direct notebook `21` `+0.1181` |
+| `notebooks/recreated_runs/30_kaggle_paper_port_recreated_raw_inverted_route_full_run.ipynb` | Recreated raw inverted-route full run | Đã tạo, chờ chạy Kaggle | Không phải smoke test; `PORT_MAX_SAMPLES=-1`; full selected matrix `original + noise_prefix + composite` x `bio/chem/cyber`; expected rows `11004`; cùng route notebook `29` |
 
 ### Kết quả notebook 26 mới nhất
 
@@ -664,22 +665,19 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `28` đã pass trên Kaggle và xác nhận bottleneck chính là post-judge routing semantics. Route hiện tại kiểu `keep label==0` làm accuracy tụt còn `0.1840`, trong khi route deployable `raw_route_inverted_keep_label1_no_conf` đạt `0.4236`, gần sát raw oracle `0.4271` và vượt raw direct notebook `21` là `0.2917`.
+Notebook `29` đã pass trên Kaggle và xác nhận route deployable tốt nhất từ notebook `28` vẫn giữ được hiệu quả khi chạy scale path thật: `0.4097` trên `288` rows, valid `1.0000`, rethink `0.6632`. Kết quả này vượt notebook `20` `+0.1875` và vượt raw direct notebook `21` `+0.1181`, chỉ kém diagnostic cùng route notebook `28` `0.0139`.
 
 Việc cần làm ngay:
 
-- Không chạy `PORT_MAX_SAMPLES=-1` cho recreated PoRT hiện tại.
 - Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
-- Không chạy full paper/full recreated PoRT ngay.
+- Không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
+- Có thể chạy full recreated route tốt nhất hiện tại bằng notebook `30`.
 - Không tiếp tục scale `structure_gate` hiện tại vì notebook `26` đã không vượt notebook `20`.
 - Không tiếp tục threshold sweep theo điều kiện hiện tại (`keep label==0, rethink else`) vì notebook `27` đã cho thấy selective routing thấp hơn raw rất nhiều.
-- Chạy notebook `29` trên Kaggle với mặc định `32` rows/job.
-- Notebook `29` phải chạy một scale path deployable duy nhất, không phải diagnostic nhiều nhánh: raw prompt -> initial answer -> best recreated post-judge classifier -> keep initial nếu `label==1`, otherwise rethink.
-- So sánh notebook `29` với:
-  - notebook `20` recreated scale current route `0.2222`;
-  - notebook `21` raw direct `0.2917`;
-  - notebook `28` same-route diagnostic `0.4236`.
-- Nếu notebook `29` giữ được mức gần `0.4236` và không lỗi artifact/output, bước tiếp theo mới là tạo full-dataset version với `PORT_MAX_SAMPLES=-1`.
-- Nếu notebook `29` tụt mạnh so với notebook `28`, cần so diff giữa diagnostic raw route và scale runner mới: prompt, generation seed/order, rethink prompt, classifier input expansion, và output parsing.
+- Chạy notebook `30` trên Kaggle với `PORT_MAX_SAMPLES=-1`.
+- Expected default full row count: `11004` rows (`3668` rows/variant x `3` variants).
+- Route vẫn là raw prompt -> initial answer -> best recreated post-judge classifier -> keep initial nếu `label==1`, otherwise rethink; confidence chỉ ghi log, không dùng để route.
+- Sau notebook `30`, đọc `summary.json`, `matrix_summary.csv`, `all_predictions.csv`, runtime và failed jobs; nếu pass thì mới tổng hợp full recreated PoRT vs notebook `11` no-defense baseline.
+- Nếu notebook `30` gặp timeout/OOM, split full run theo variant hoặc domain nhưng giữ cùng `run_name`/artifact contract để có thể tổng hợp lại.
 - Chưa quay lại train/format prefix compiler cho tới khi post-judge routing được sửa, vì structure gate đã cho thấy prompt format không phải bottleneck chính.
-- Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
+- Chỉ claim `recreated PoRT` results.
