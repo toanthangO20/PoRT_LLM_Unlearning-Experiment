@@ -56,7 +56,8 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/25_kaggle_paper_port_prefix_quality_gate_counterfactual.ipynb` | Prefix quality gate counterfactual diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` dataset rows, `1152` prediction rows; `structure_gate` đạt `0.2986`, nhỉnh hơn raw `+0.0069`, nhưng reuse raw-direct ở `80.2%` rows nên đây là safety gate diagnostic, chưa phải full PoRT/paper metric |
 | `notebooks/recreated_runs/26_kaggle_paper_port_recreated_structure_gate_scale_run.ipynb` | Recreated PoRT structure-gate scale path | Đã pass trên Kaggle | Không phải smoke test; `288` rows; overall acc `0.2222`, valid `0.9965`, rethink `0.7222`; structure gate pass `0.1632`, fallback raw `0.8368`; không cải thiện notebook `20` và thấp hơn raw direct notebook `21` |
 | `notebooks/recreated_runs/27_kaggle_paper_port_postjudge_rethink_oracle_diagnostic.ipynb` | Post-judge/rethink oracle diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct `0.2917`, raw selective `0.1840`, raw oracle `0.4271`, structure-gated selective `0.1944`, structure-gated oracle `0.4063`; oracle cao nhưng router/selective làm tụt mạnh |
-| `notebooks/recreated_runs/28_kaggle_paper_port_postjudge_routing_semantics_diagnostic.ipynb` | Post-judge routing semantics diagnostic | Đã tạo, chờ chạy Kaggle | Không phải smoke test; `32` rows/job; test current route, inverted correctness route, confidence-only routes, và oracle-compatible routing stats trên raw + structure-gated prompts |
+| `notebooks/recreated_runs/28_kaggle_paper_port_postjudge_routing_semantics_diagnostic.ipynb` | Post-judge routing semantics diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct `0.2917`, current route `0.1840`, inverted route + conf `0.3125`, inverted route no-conf `0.4236`, raw oracle `0.4271`; kết luận chính là routing hiện tại đang đảo semantics |
+| `notebooks/recreated_runs/29_kaggle_paper_port_recreated_raw_inverted_route_scale_run.ipynb` | Recreated raw inverted-route scale path | Đã tạo, chờ chạy Kaggle | Không phải smoke test; `32` rows/job; áp dụng deployable route tốt nhất từ notebook `28`: raw prompts, keep initial khi `postjudge label == 1`, bỏ confidence gate, rethink otherwise |
 
 ### Kết quả notebook 26 mới nhất
 
@@ -663,7 +664,7 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `27` đã xác nhận rethink generation có upper bound đáng kể nhưng selective routing hiện tại chọn sai. Notebook `28` đã được tạo để kiểm tra route semantics trực tiếp trên cùng quy mô `32` rows/job: current route, inverted correctness route, confidence-only routes, và oracle-compatible routing stats cho raw + structure-gated prompts.
+Notebook `28` đã pass trên Kaggle và xác nhận bottleneck chính là post-judge routing semantics. Route hiện tại kiểu `keep label==0` làm accuracy tụt còn `0.1840`, trong khi route deployable `raw_route_inverted_keep_label1_no_conf` đạt `0.4236`, gần sát raw oracle `0.4271` và vượt raw direct notebook `21` là `0.2917`.
 
 Việc cần làm ngay:
 
@@ -672,14 +673,13 @@ Việc cần làm ngay:
 - Không chạy full paper/full recreated PoRT ngay.
 - Không tiếp tục scale `structure_gate` hiện tại vì notebook `26` đã không vượt notebook `20`.
 - Không tiếp tục threshold sweep theo điều kiện hiện tại (`keep label==0, rethink else`) vì notebook `27` đã cho thấy selective routing thấp hơn raw rất nhiều.
-- Chạy notebook `28` trên Kaggle với mặc định `32` rows/job.
-- Đọc các method chính trong notebook `28`:
-  - `raw_route_paper_keep_label0_conf` và `raw_route_paper_keep_label0_no_conf`;
-  - `raw_route_inverted_keep_label1_conf` và `raw_route_inverted_keep_label1_no_conf`;
-  - `raw_route_confidence_keep_high` và `raw_route_confidence_rethink_high`;
-  - các method `structure_gated_route_*` tương ứng;
-  - oracle upper bounds `raw_oracle_initial_vs_rethink` và `structure_gated_oracle_initial_vs_rethink`.
-- Nếu inverted route tiến gần raw oracle hoặc ít nhất vượt raw direct, hướng tiếp theo là đổi/retrain post-judge theo objective correctness-routing cho recreated diagnostic.
-- Nếu inverted route vẫn thấp dù oracle cao, cần train một router mới trực tiếp dự đoán `initial_wrong_and_rethink_correct` hoặc `rethink_improves_answer`, thay vì dùng weak answer-correctness classifier làm post-judge.
+- Chạy notebook `29` trên Kaggle với mặc định `32` rows/job.
+- Notebook `29` phải chạy một scale path deployable duy nhất, không phải diagnostic nhiều nhánh: raw prompt -> initial answer -> best recreated post-judge classifier -> keep initial nếu `label==1`, otherwise rethink.
+- So sánh notebook `29` với:
+  - notebook `20` recreated scale current route `0.2222`;
+  - notebook `21` raw direct `0.2917`;
+  - notebook `28` same-route diagnostic `0.4236`.
+- Nếu notebook `29` giữ được mức gần `0.4236` và không lỗi artifact/output, bước tiếp theo mới là tạo full-dataset version với `PORT_MAX_SAMPLES=-1`.
+- Nếu notebook `29` tụt mạnh so với notebook `28`, cần so diff giữa diagnostic raw route và scale runner mới: prompt, generation seed/order, rethink prompt, classifier input expansion, và output parsing.
 - Chưa quay lại train/format prefix compiler cho tới khi post-judge routing được sửa, vì structure gate đã cho thấy prompt format không phải bottleneck chính.
 - Chỉ claim `recreated PoRT` results, không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
