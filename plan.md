@@ -58,7 +58,8 @@ Definition of done cho full reproduction:
 | `notebooks/recreated_runs/27_kaggle_paper_port_postjudge_rethink_oracle_diagnostic.ipynb` | Post-judge/rethink oracle diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct `0.2917`, raw selective `0.1840`, raw oracle `0.4271`, structure-gated selective `0.1944`, structure-gated oracle `0.4063`; oracle cao nhưng router/selective làm tụt mạnh |
 | `notebooks/recreated_runs/28_kaggle_paper_port_postjudge_routing_semantics_diagnostic.ipynb` | Post-judge routing semantics diagnostic | Đã pass trên Kaggle | Không phải smoke test; `288` rows; raw direct `0.2917`, current route `0.1840`, inverted route + conf `0.3125`, inverted route no-conf `0.4236`, raw oracle `0.4271`; kết luận chính là routing hiện tại đang đảo semantics |
 | `notebooks/recreated_runs/29_kaggle_paper_port_recreated_raw_inverted_route_scale_run.ipynb` | Recreated raw inverted-route scale path | Đã pass trên Kaggle | Không phải smoke test; `288` rows; route deployable `raw_route_inverted_keep_label1_no_conf`; overall acc `0.4097`, valid `1.0000`, rethink `0.6632`; vượt notebook `20` `+0.1875` và raw direct notebook `21` `+0.1181` |
-| `notebooks/recreated_runs/30_kaggle_paper_port_recreated_raw_inverted_route_full_run.ipynb` | Recreated raw inverted-route full run | Đã tạo, chờ chạy Kaggle | Không phải smoke test; `PORT_MAX_SAMPLES=-1`; full selected matrix `original + noise_prefix + composite` x `bio/chem/cyber`; expected rows `11004`; cùng route notebook `29` |
+| `notebooks/recreated_runs/30_kaggle_paper_port_recreated_raw_inverted_route_full_run.ipynb` | Recreated raw inverted-route full run | Đã pass trên Kaggle | Không phải smoke test; `11004` rows; final generated acc `0.3146`, initial generated acc `0.3161`, valid final `0.9925`, rethink `0.8045`, available oracle `0.4323`; route full không giữ được lift notebook `29` |
+| `notebooks/recreated_runs/31_kaggle_paper_port_direct_router_diagnostic_from_notebook30.ipynb` | Direct router diagnostic từ artifact notebook `30` | Đã tạo và chạy local diagnostic | Không phải smoke test; đọc zip notebook `30`; best held-out selector là `label0_confidence_threshold` threshold `0.6474`; candidate test acc `0.2809` vs current rethink `0.2402`; hybrid held-out group acc `0.3275` vs notebook `30` current `0.2920`; TF-IDF selector kém hơn |
 
 ### Kết quả notebook 26 mới nhất
 
@@ -665,19 +666,19 @@ Tài liệu cần tạo sau full runs:
 
 ## Next Immediate Action
 
-Notebook `29` đã pass trên Kaggle và xác nhận route deployable tốt nhất từ notebook `28` vẫn giữ được hiệu quả khi chạy scale path thật: `0.4097` trên `288` rows, valid `1.0000`, rethink `0.6632`. Kết quả này vượt notebook `20` `+0.1875` và vượt raw direct notebook `21` `+0.1181`, chỉ kém diagnostic cùng route notebook `28` `0.0139`.
+Notebook `30` đã pass full matrix trên Kaggle nhưng kết quả full không giữ được lift của notebook `29`: `11004` rows, final generated acc `0.3146`, initial generated acc `0.3161`, valid final `0.9925`, rethink `0.8045`, available initial-vs-rethink oracle `0.4323`. Route hiện tại tạo quá nhiều rethink; trên các row có cả initial và rethink, rethink giúp `1279` row nhưng làm hỏng `1295` row, nên hiệu ứng gần như triệt tiêu.
+
+Notebook `31` đã được tạo để đọc artifact zip notebook `30` và chẩn đoán direct router offline, không chạy lại target model. Diagnostic local cho thấy hướng tốt nhất trước mắt không phải TF-IDF selector, mà là policy đơn giản `label0_confidence_threshold` với threshold `0.6474`: candidate held-out acc `0.2809` so với current rethink `0.2402`; hybrid held-out group acc `0.3275` so với notebook `30` current `0.2920`.
 
 Việc cần làm ngay:
 
 - Không dùng kết quả generation-mode để claim metric paper top-logit của notebook `11`.
 - Không claim official PoRT paper metric vì official T5/classifier checkpoint vẫn chưa public.
-- Có thể chạy full recreated route tốt nhất hiện tại bằng notebook `30`.
+- Không tiếp tục full rerun bằng route notebook `30` nguyên bản vì full result đã cho thấy over-rethink.
 - Không tiếp tục scale `structure_gate` hiện tại vì notebook `26` đã không vượt notebook `20`.
 - Không tiếp tục threshold sweep theo điều kiện hiện tại (`keep label==0, rethink else`) vì notebook `27` đã cho thấy selective routing thấp hơn raw rất nhiều.
-- Chạy notebook `30` trên Kaggle với `PORT_MAX_SAMPLES=-1`.
-- Expected default full row count: `11004` rows (`3668` rows/variant x `3` variants).
-- Route vẫn là raw prompt -> initial answer -> best recreated post-judge classifier -> keep initial nếu `label==1`, otherwise rethink; confidence chỉ ghi log, không dùng để route.
-- Sau notebook `30`, đọc `summary.json`, `matrix_summary.csv`, `all_predictions.csv`, runtime và failed jobs; nếu pass thì mới tổng hợp full recreated PoRT vs notebook `11` no-defense baseline.
-- Nếu notebook `30` gặp timeout/OOM, split full run theo variant hoặc domain nhưng giữ cùng `run_name`/artifact contract để có thể tổng hợp lại.
+- Chạy/commit notebook `31` nếu cần tái lập diagnostic trên Kaggle từ zip notebook `30`.
+- Next implementation step: tạo notebook `32` tích hợp direct confidence-threshold router vào recreated scale path thật, trước hết chạy `32` rows/job để so với notebook `29`, notebook `30`, raw direct và threshold diagnostic.
+- Nếu notebook `32` giữ được lift trên scale path thật, mới chạy lại full recreated PoRT với route threshold này.
 - Chưa quay lại train/format prefix compiler cho tới khi post-judge routing được sửa, vì structure gate đã cho thấy prompt format không phải bottleneck chính.
 - Chỉ claim `recreated PoRT` results.
