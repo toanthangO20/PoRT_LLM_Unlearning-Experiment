@@ -1,0 +1,524 @@
+\documentclass[t, aspectratio=169]{beamer}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{vietnam}
+  \usepackage{lmodern}
+\else
+  \usepackage{fontspec}
+  \setsansfont{DejaVu Sans}
+  \setmainfont{DejaVu Serif}
+  \setmonofont{DejaVu Sans Mono}
+  \renewcommand{\familydefault}{\sfdefault}
+\fi
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{tikz}
+\usepackage{url}
+\usetikzlibrary{arrows.meta, positioning, fit, shapes.geometric}
+
+\def\slideContentLeftMargin{0.65cm}
+\def\slideContentRightMargin{0.85cm}
+\def\hustHeaderHeight{1cm}
+\def\slideContentBotMargin{3.5cm}
+
+\usepackage[blue, 169]{beamerthemeHUST}
+
+\renewcommand{\titlePageTitleX}{0cm}
+\renewcommand{\titlePageTitleY}{-0.65cm}
+\renewcommand{\hustTitleAlign}{\alignLeft}
+\renewcommand{\hustSubtitleAlign}{\alignLeft}
+\renewcommand{\hustAuthorAlign}{\alignLeft}
+\renewcommand{\hustInstAlign}{\alignLeft}
+
+\title{\texorpdfstring{LLM Unlearning cho\\tri thức nguy hiểm}{LLM Unlearning cho tri thuc nguy hiem}}
+\subtitle{}
+\author{\texorpdfstring{\small Nhóm 5\\ Bùi Toàn Thắng - 20251192M\\ Nguyễn Thị Ngọc Huyền - 20251330M\\ Lê Văn Quân - 20252099M\\[2pt] GVHD: TS. Ngô Văn Linh}{Nhom 5: Bui Toan Thang, Nguyen Thi Ngoc Huyen, Le Van Quan, GVHD: TS. Ngo Van Linh}}
+\institute{}
+\date{\today}
+
+\newcommand{\term}[1]{\textbf{\textcolor{hustprimary}{#1}}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\smallsource}[1]{\vspace{0.2em}{\scriptsize\textit{Nguồn: #1}}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\tikzset{
+  pipe/.style={
+    rectangle,
+    rounded corners=2pt,
+    draw=hustprimary,
+    very thick,
+    fill=hustprimary!7,
+    align=center,
+    minimum height=0.88cm,
+    text width=2.4cm,
+    font=\scriptsize
+  },
+  arrow/.style={-{Latex[length=2.2mm]}, very thick, draw=black!65},
+  evalbox/.style={
+    rectangle,
+    draw=black!35,
+    rounded corners=2pt,
+    fill=black!3,
+    align=left,
+    inner sep=4pt,
+    font=\scriptsize
+  }
+}
+
+\begin{document}
+
+\hustintropage{}
+\husttitlepage
+
+\begin{frame}{Nội dung trình bày}
+  \tableofcontents[hideallsubsections]
+\end{frame}
+
+\resetPageCount
+\showPageNumber
+\useStyleHustFull
+\useThinBar
+
+\section{Đặt vấn đề}
+
+\begin{frame}{Đặt vấn đề}
+  \begin{block}{Bối cảnh}
+    \begin{itemize}
+      \item Các mô hình ngôn ngữ lớn ngày càng được dùng như trợ lý tri thức trong học tập, làm việc, lập trình và nghiên cứu.
+      \item Để có năng lực rộng, mô hình được huấn luyện trên lượng dữ liệu rất lớn, trong đó có thể lẫn thông tin sai lệch, riêng tư, bản quyền hoặc nhạy cảm.
+      \item Sau khi mô hình đã học, việc loại bỏ một phần tri thức không còn đơn giản như xóa một file khỏi cơ sở dữ liệu.
+      \item Vì vậy xuất hiện nhu cầu \term{LLM unlearning}: làm cho mô hình giảm phụ thuộc vào một nhóm tri thức không mong muốn, nhưng vẫn giữ khả năng hữu ích đã học.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}{Định nghĩa bài toán}
+  \small
+  Cho mô hình gốc $M_{\theta}$, cần tạo mô hình hoặc hệ thống sau unlearning $M'$.
+
+  \vspace{0.4em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Đầu vào bài toán}
+        \begin{itemize}
+          \item Forget set $D_f$: tri thức/nhiệm vụ cần làm quên.
+          \item Retain set $D_r$: tri thức/nhiệm vụ cần giữ.
+          \item Neighbor set $D_n$: tri thức gần miền forget nhưng an toàn.
+          \item Threat model: prefix, composite, paraphrase, relearning.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Đầu ra mong muốn}
+        \begin{itemize}
+          \item Model, adapter hoặc inference-time pipeline.
+          \item Giảm leakage trên $D_f$ và $D_f^{adv}$.
+          \item Giữ utility trên $D_r$ và $D_n$.
+          \item Có bằng chứng robustness, không chỉ accuracy giảm.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+
+  \[
+    \min_{M'} \; \mathcal{R}_{forget}(M',D_f,D_f^{adv})
+    \quad \text{s.t.} \quad
+    \mathcal{U}(M',D_r,D_n)\approx \mathcal{U}(M_{\theta},D_r,D_n)
+  \]
+\end{frame}
+
+\begin{frame}{Dữ liệu vào và đầu ra đánh giá}
+  \small
+  \begin{block}{WMDP record}
+    \begin{tabularx}{\textwidth}{l l Y}
+      \toprule
+      \textbf{Trường} & \textbf{Kiểu} & \textbf{Ý nghĩa} \\
+      \midrule
+      \code{question} & string & Câu hỏi trắc nghiệm trong miền rủi ro \\
+      \code{choices} & list[string] & Bốn lựa chọn trả lời A-D \\
+      \code{answer} & int64 & Chỉ số đáp án đúng, thường 0-3 \\
+      \bottomrule
+    \end{tabularx}
+  \end{block}
+
+  \vspace{0.4em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Dữ liệu đầu vào}
+        \code{original}, \code{noise\_prefix}, \code{composite}; ba miền \code{bio}, \code{cyber}, \code{chem}.
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Đầu ra cần ghi}
+        Đáp án A-D, confidence/risk score, trạng thái refuse/rethink, latency và log quyết định router.
+      \end{block}
+    \end{column}
+  \end{columns}
+  \smallsource{WMDP: Li et al., ICML 2024}
+\end{frame}
+
+\begin{frame}{Thách thức hiện tại}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Về phương pháp}
+        \begin{itemize}
+          \item Tri thức nguy hiểm và tri thức hữu ích đan xen.
+          \item Weight-level unlearning dễ làm mất utility.
+          \item Inference-time guard dễ thành ``che đầu ra'' thay vì ``quên thật''.
+          \item Classifier/router sai gây leak hoặc over-refusal.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{alertblock}{Về đánh giá}
+        \begin{itemize}
+          \item WMDP MCQ hữu ích nhưng chưa đủ.
+          \item Cần test open-ended leakage và multi-turn.
+          \item Cần kiểm tra prompt attack, relearning và benign relearning.
+          \item Cần giải thích vì sao số liệu tăng/giảm, không chỉ báo cáo bảng.
+        \end{itemize}
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\section{Nghiên cứu liên quan}
+
+\begin{frame}{Tiêu chí chọn nghiên cứu liên quan}
+  \small
+  \begin{block}{Phạm vi}
+    Các công trình về LLM unlearning / hazardous knowledge reduction, ưu tiên có thực nghiệm trên WMDP hoặc benchmark unlearning chuẩn.
+  \end{block}
+
+  \vspace{0.5em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Nguồn trích dẫn}
+        \begin{itemize}
+          \item ICML, NeurIPS, AAAI, ACL/NAACL, COLM, ICLR.
+          \item Dùng proceedings hoặc OpenReview chính thức.
+          \item Không dùng link arXiv preprint trong slide.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{alertblock}{Cách đọc related work}
+        Không chỉ liệt kê paper; cần rút ra: paper giải quyết điểm gì, mạnh ở đâu, yếu ở đâu, và khoảng trống nào còn lại.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Related work: weight/representation-level}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l l Y Y}
+    \toprule
+    \textbf{Paper} & \textbf{Nguồn} & \textbf{Ưu điểm} & \textbf{Nhược điểm} \\
+    \midrule
+    WMDP/RMU \cite{wmdp} & ICML 2024 & Đưa ra WMDP và RMU; đánh trực tiếp vào biểu diễn ẩn & Accuracy MCQ chưa chứng minh đã quên; nhạy layer và retain set \\
+    WAGLE \cite{wagle} & NeurIPS 2024 & Dùng weight attribution để can thiệp mô-đun hơn & Attribution trên LLM lớn tốn kém, khó ổn định \\
+    Adaptive RMU \cite{armu} & AAAI 2025 & Phân tích cơ chế steering và cải thiện RMU & Vẫn nhạy hyperparameter; khó khi forget/retain overlap \\
+    SEUF \cite{seuf} & ACL 2025 & Nghiên cứu unlearning trên Mixture-of-Experts & Phụ thuộc kiến trúc MoE, không áp dụng trực tiếp cho dense LLM \\
+    \bottomrule
+  \end{tabularx}
+\end{frame}
+
+\begin{frame}{Related work: optimization và preference}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l l Y Y}
+    \toprule
+    \textbf{Paper} & \textbf{Nguồn} & \textbf{Ưu điểm} & \textbf{Nhược điểm} \\
+    \midrule
+    NPO \cite{npo} & COLM 2024 & Ổn định hơn gradient ascent, giảm catastrophic collapse & Có thể đẩy xác suất sang paraphrase tương đương \\
+    SatImp \cite{satimp} & ICML 2025 & Reweight loss theo saturation/importance để cân bằng forget-retain & Phụ thuộc retain data và tiêu chí reweight \\
+    Robust relearning \cite{relearning} & ICML 2025 & Chỉ ra tri thức có thể phục hồi sau fine-tuning; thêm mục tiêu robustness & Tăng chi phí tối ưu, threat model chưa bao phủ hết \\
+    LLM Beliefs \cite{belief} & ICLR 2026 & Chống squeezing effect bằng belief negatives & Cần sinh belief set đủ bao phủ, dễ suppress cả tri thức hợp pháp gần miền \\
+    \bottomrule
+  \end{tabularx}
+\end{frame}
+
+\begin{frame}{Related work: inference-time và đánh giá}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l l Y Y}
+    \toprule
+    \textbf{Paper} & \textbf{Nguồn} & \textbf{Ưu điểm} & \textbf{Nhược điểm} \\
+    \midrule
+    ECO Prompts \cite{eco} & NeurIPS 2024 & Nhẹ, không cần sửa trọng số; dùng embedding corruption & Phụ thuộc classifier, không xóa tri thức khỏi base model \\
+    SPUL \cite{spul} & NAACL 2025 & Soft prompt giúp triển khai rẻ trên frozen model & Base model vẫn còn tri thức; dễ bypass nếu thiếu soft prompt \\
+    PoRT \cite{port} & ICLR 2026 & Post-judgment trên cả prompt và response; mạnh với prefix/composite attack & Tăng latency; phụ thuộc judge/router; thiên về inference-time defense \\
+    OpenUnlearning \cite{openunlearning} & NeurIPS D\&B 2025 & Chuẩn hóa benchmark, metric và nhiều phương pháp & Framework đánh giá, không phải phương pháp unlearning mới \\
+    \bottomrule
+  \end{tabularx}
+\end{frame}
+
+\begin{frame}{Khoảng trống nghiên cứu rút ra}
+  \small
+  \begin{enumerate}
+    \item \term{True unlearning vs output suppression}: nhiều phương pháp làm giảm câu trả lời nhưng chưa chứng minh tri thức khó truy hồi.
+    \item \term{WMDP-only evaluation chưa đủ}: cần thêm open-ended QA, paraphrase, multi-turn và relearning.
+    \item \term{Router/classifier calibration}: PoRT/ECO phụ thuộc mạnh vào judge và threshold.
+    \item \term{Retain set lân cận}: giữ MMLU chung chưa đủ để bảo toàn bio/cyber/chem an toàn.
+    \item \term{Robustness chưa đồng bộ}: mỗi paper dùng threat model khác nhau, khó so sánh trực tiếp.
+  \end{enumerate}
+\end{frame}
+
+\section{Phương pháp đề xuất}
+
+\begin{frame}{Ý tưởng: nối trực tiếp với khoảng trống}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{Y Y}
+    \toprule
+    \textbf{Khoảng trống từ related work} & \textbf{Thiết kế trong SAFE-PoRT} \\
+    \midrule
+    Inference-time defense chưa phải true unlearning & Thêm LoRA unlearning adapter trước lớp post-judgment \\
+    Squeezing/paraphrase leakage & Sinh belief negatives từ model gốc và suppress cả biến thể high-confidence \\
+    Retain utility gần miền forget bị xem nhẹ & Thêm $D_{neighbor}$: bio/cyber/chem an toàn vào KL retain objective \\
+    Router dễ sai threshold & Calibrate bằng validation group-heldout, dùng confidence/entropy/risk/disagreement \\
+    Evaluation thiếu robustness & Đánh giá original, noise prefix, composite, paraphrase, open-ended và relearning \\
+    \bottomrule
+  \end{tabularx}
+\end{frame}
+
+\begin{frame}{SAFE-PoRT: pipeline tổng quan}
+  \centering
+  \begin{tikzpicture}[node distance=0.35cm and 0.42cm]
+    \node[pipe] (data) {WMDP\\+ variants};
+    \node[pipe, right=of data] (split) {Forget\\Retain\\Neighbor};
+    \node[pipe, right=of split] (aug) {Semantic\\Syntactic\\Augment};
+    \node[pipe, right=of aug] (belief) {Belief\\Negatives};
+    \node[pipe, below=0.78cm of belief] (adapter) {LoRA\\Unlearning\\Adapter};
+    \node[pipe, left=of adapter] (judge) {PoRT-style\\Post Judge};
+    \node[pipe, left=of judge] (rethink) {Selective\\Rethink};
+    \node[pipe, left=of rethink] (eval) {Robust\\Evaluation};
+
+    \draw[arrow] (data) -- (split);
+    \draw[arrow] (split) -- (aug);
+    \draw[arrow] (aug) -- (belief);
+    \draw[arrow] (belief) -- (adapter);
+    \draw[arrow] (adapter) -- (judge);
+    \draw[arrow] (judge) -- (rethink);
+    \draw[arrow] (rethink) -- (eval);
+  \end{tikzpicture}
+
+  \vspace{0.7em}
+  \small
+  \textbf{Mục tiêu:} kết hợp giảm tri thức nội tại bằng adapter với robust post-judgment ở inference time.
+\end{frame}
+
+\begin{frame}{Hàm mục tiêu đề xuất}
+  \small
+  Train adapter $\Delta$ để thu được $M' = M_{\theta} + \Delta$.
+
+  \vspace{0.4em}
+  \[
+  \mathcal{L} =
+  \lambda_1 \mathcal{L}_{NPO}(D_f \cup B_f)
+  + \lambda_2 KL(M' || M_{\theta}; D_r)
+  + \lambda_3 KL(M' || M_{\theta}; D_{neighbor})
+  + \lambda_4 \mathcal{L}_{rep}
+  + \lambda_5 \mathcal{L}_{smooth}
+  \]
+
+  \vspace{0.4em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Thành phần quên}
+        $D_f$ là WMDP; $B_f$ là các response high-confidence do model gốc sinh ra.
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Thành phần giữ}
+        $D_r$ giữ năng lực chung; $D_{neighbor}$ giữ kiến thức an toàn gần miền nguy hiểm.
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Post-judgment router}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Quy trình}
+        \begin{enumerate}
+          \item Chuẩn hóa/clean prompt.
+          \item Sinh initial answer bằng $M'$.
+          \item Judge cặp \code{(prompt, answer)}.
+          \item Nếu rủi ro hoặc confidence thấp: rethink/refuse.
+          \item Nếu an toàn: trả lời trực tiếp.
+        \end{enumerate}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{alertblock}{Tín hiệu router}
+        Risk score của prompt/response, entropy đáp án A-D, confidence, disagreement giữa base model và adapter, lịch sử rethink.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\section{Kết quả thực nghiệm}
+
+\begin{frame}{Môi trường thực nghiệm cần báo cáo}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l Y}
+    \toprule
+    \textbf{Hạng mục} & \textbf{Cần ghi rõ trong báo cáo} \\
+    \midrule
+    Hardware & GPU, VRAM, RAM, CPU, thời gian chạy; ví dụ Kaggle T4/P100 hoặc A100 nếu có \\
+    Model & Base LLM, tokenizer, context length, precision FP16/BF16/4-bit \\
+    Dataset & WMDP original/noise\_prefix/composite, split train/valid/test, group split \\
+    Hyperparameter & LoRA rank/alpha/dropout, learning rate, batch size, epoch, warmup, seed \\
+    Router & Judge model/classifier, threshold, feature dùng để route, rethink budget \\
+    Metrics & WMDP accuracy/leakage, retain utility, over-refusal, rethink rate, latency \\
+    \bottomrule
+  \end{tabularx}
+\end{frame}
+
+\begin{frame}{Kịch bản so sánh với SOTA}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l Y Y}
+    \toprule
+    \textbf{Nhóm baseline} & \textbf{Phương pháp} & \textbf{Mục đích so sánh} \\
+    \midrule
+    No defense & Base model & Mốc nguy cơ ban đầu trên WMDP và utility \\
+    Representation & RMU / Adaptive RMU & So với hướng weight-level/representation-level \\
+    Preference/optimization & NPO / SatImp & So với hướng tối ưu loss unlearning \\
+    Inference-time & ECO / SPUL / PoRT & So với guard/router không sửa hoặc ít sửa trọng số \\
+    Proposed & SAFE-PoRT & Kiểm tra lợi ích của adapter + post-judge + robust eval \\
+    \bottomrule
+  \end{tabularx}
+
+  \vspace{0.5em}
+  \begin{alertblock}{Lưu ý}
+    Nếu không chạy được toàn bộ SOTA, cần nêu rõ phương pháp nào lấy từ paper, phương pháp nào reproduce, và setting có khác gì.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Ablation nội bộ}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l Y Y}
+    \toprule
+    \textbf{Cấu hình} & \textbf{Câu hỏi kiểm tra} & \textbf{Kỳ vọng khi phân tích} \\
+    \midrule
+    Base/no-defense & Model gốc rủi ro đến đâu? & WMDP cao, utility giữ nguyên \\
+    PoRT-only & Post-judgment có giúp chống prefix/composite không? & Leakage giảm nhưng latency/rethink tăng \\
+    Adapter-only & Unlearning nội tại có giảm leakage không? & Forget giảm, có thể mất neighbor utility \\
+    Adapter + router & Hai lớp có bổ sung cho nhau không? & Robust hơn từng lớp riêng lẻ \\
+    Full SAFE-PoRT & Belief negatives/augmentation có giảm paraphrase leakage không? & Relearning/paraphrase khó hơn, chi phí tăng \\
+    \bottomrule
+  \end{tabularx}
+\end{frame}
+
+\begin{frame}{Mẫu bảng kết quả nên có}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l c c c c c}
+    \toprule
+    \textbf{Method} & \textbf{WMDP} $\downarrow$ & \textbf{Adv. WMDP} $\downarrow$ & \textbf{Retain} $\uparrow$ & \textbf{Rethink} $\downarrow$ & \textbf{Latency} $\downarrow$ \\
+    \midrule
+    Base & -- & -- & -- & -- & -- \\
+    RMU / NPO & -- & -- & -- & -- & -- \\
+    PoRT-only & -- & -- & -- & -- & -- \\
+    Adapter-only & -- & -- & -- & -- & -- \\
+    SAFE-PoRT & -- & -- & -- & -- & -- \\
+    \bottomrule
+  \end{tabularx}
+
+  \vspace{0.7em}
+  \begin{block}{Cách trình bày}
+    Không chỉ đọc số liệu. Cần giải thích: vì sao method giảm WMDP, vì sao retain tụt, vì sao rethink tăng, và lỗi nằm ở adapter hay router.
+  \end{block}
+\end{frame}
+
+\begin{frame}{Cách diễn giải kết quả}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Nếu kết quả tốt}
+        \begin{itemize}
+          \item WMDP và adversarial WMDP giảm.
+          \item Retain/neighbor utility không tụt mạnh.
+          \item Relearning khó hơn baseline.
+          \item Router không always-rethink, không over-refuse quá mức.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{alertblock}{Nếu kết quả chưa tốt}
+        \begin{itemize}
+          \item Retain tụt: adapter quá mạnh hoặc neighbor set yếu.
+          \item Leakage còn: belief negatives/paraphrase chưa bao phủ.
+          \item Latency cao: post-judge/rethink quá nhiều.
+          \item Over-refusal: threshold hoặc risk classifier lệch.
+        \end{itemize}
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\section{Kết luận và hướng phát triển}
+
+\begin{frame}{Kết luận}
+  \begin{enumerate}
+    \item Đã xác định bài toán LLM unlearning cho tri thức nguy hiểm với forget/retain/neighbor data.
+    \item Đã tổng hợp các hướng liên quan và chỉ ra hạn chế: output suppression, WMDP-only evaluation, router calibration, retain utility.
+    \item Đã đề xuất SAFE-PoRT: LoRA unlearning adapter + belief negatives + PoRT-style post-judgment.
+    \item Đã thiết kế kịch bản đánh giá gồm SOTA comparison, ablation nội bộ, robustness và system metrics.
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}{Hướng phát triển}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Khắc phục nhược điểm}
+        \begin{itemize}
+          \item Giảm latency bằng router hai tầng.
+          \item Tăng coverage belief negatives bằng paraphrase/open-ended generation.
+          \item Tăng retain bằng neighbor set chất lượng hơn.
+          \item Kiểm tra relearning sau fine-tune ngắn.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{alertblock}{Hướng mở rộng}
+        \begin{itemize}
+          \item Thử trên model lớn hơn và domain khác.
+          \item Thêm human/safety judge cho open-ended leakage.
+          \item Phân tích activation để kiểm tra erase hay hide.
+          \item Chuẩn hóa log để tái lập kết quả.
+        \end{itemize}
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\section{Tài liệu tham khảo}
+
+\begin{frame}[allowframebreaks]{Tài liệu tham khảo chính}
+  \scriptsize
+  \begin{thebibliography}{99}
+    \bibitem{wmdp} Li et al. The WMDP Benchmark: Measuring and Reducing Malicious Use With Unlearning. ICML 2024. \url{https://proceedings.mlr.press/v235/li24bc.html}
+    \bibitem{npo} Zhang et al. Negative Preference Optimization: From Catastrophic Collapse to Effective Unlearning. COLM 2024. \url{https://openreview.net/forum?id=MXLBXjQkmb}
+    \bibitem{eco} Yao et al. Large Language Model Unlearning via Embedding-Corrupted Prompts. NeurIPS 2024. \url{https://proceedings.neurips.cc/paper_files/paper/2024/hash/d6359156e0e30b1caa116a4306b12688-Abstract-Conference.html}
+    \bibitem{wagle} Wang et al. WAGLE: Strategic Weight Attribution for Effective and Modular Unlearning in Large Language Models. NeurIPS 2024. \url{https://proceedings.neurips.cc/paper_files/paper/2024/hash/649ad92e7067b3553a0f15acac68806d-Abstract-Conference.html}
+    \bibitem{armu} On Effects of Steering Latent Representation for Large Language Model Unlearning. AAAI 2025. \url{https://ojs.aaai.org/index.php/AAAI/article/view/34544}
+    \bibitem{spul} Soft Prompting for Unlearning in Large Language Models. NAACL 2025. \url{https://aclanthology.org/2025.naacl-long.204/}
+    \bibitem{seuf} SEUF: Is Unlearning One Expert Enough for Mixture-of-Experts LLMs? ACL 2025. \url{https://aclanthology.org/2025.acl-long.424/}
+    \bibitem{relearning} Towards LLM Unlearning Resilient to Relearning Attacks. ICML 2025. \url{https://proceedings.mlr.press/v267/fan25e.html}
+    \bibitem{satimp} Exploring Criteria of Loss Reweighting to Enhance LLM Unlearning. ICML 2025. \url{https://openreview.net/forum?id=mGOugCZlAq}
+    \bibitem{openunlearning} OpenUnlearning: Accelerating LLM Unlearning via Unified Benchmarking of Methods and Metrics. NeurIPS D\&B 2025. \url{https://proceedings.neurips.cc/paper_files/paper/2025/hash/3e4a38f228427ab819ba7899003a44b1-Abstract-Datasets_and_Benchmarks_Track.html}
+    \bibitem{port} Robust LLM Unlearning via Post Judgment and Multi-round Thinking. ICLR 2026. \url{https://openreview.net/forum?id=GBTUVO9vkj}
+    \bibitem{belief} LLM Unlearning with LLM Beliefs. ICLR 2026. \url{https://openreview.net/forum?id=qCfYOLAzti}
+    \bibitem{tru} Explainable LLM Unlearning through the Lens of Reasoning. ICLR 2026. \url{https://openreview.net/forum?id=wec4qy2XIF}
+    \bibitem{ssiuu} Erase or Hide? ICLR 2026. \url{https://openreview.net/forum?id=z2zFk9jYpw}
+    \bibitem{benign} Rethinking Benign Relearning: Syntax as the Hidden Driver of Unlearning Failures. ICLR 2026. \url{https://openreview.net/forum?id=IU4rqTlpRb}
+  \end{thebibliography}
+\end{frame}
+
+\hustthankyou
+
+\end{document}
