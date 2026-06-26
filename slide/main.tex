@@ -42,6 +42,7 @@
 \newcommand{\term}[1]{\textbf{\textcolor{hustprimary}{#1}}}
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\smallsource}[1]{\vspace{0.2em}{\scriptsize\textit{Nguồn: #1}}}
+\newcommand{\rowrule}{\midrule[0.25pt]}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 
 \tikzset{
@@ -130,183 +131,345 @@
   \]
 \end{frame}
 
-\begin{frame}{Dữ liệu vào và đầu ra đánh giá}
+\begin{frame}{Thách thức hiện tại}
   \small
-  \begin{block}{WMDP record}
+  \begin{block}{Các khó khăn chính}
+    \begin{itemize}
+      \item Tri thức cần làm quên và tri thức hữu ích thường đan xen trong cùng biểu diễn của mô hình.
+      \item Không có mô hình ``đã quên lý tưởng'' để so sánh, vì train lại LLM từ đầu gần như không khả thi.
+      \item Weight-level unlearning có khả năng tác động sâu hơn nhưng dễ làm mất utility trên các tác vụ bình thường.
+      \item Inference-time guard dễ triển khai hơn nhưng có thể chỉ che đầu ra, chưa chắc làm mô hình thật sự quên.
+      \item Router/classifier sai ngưỡng có thể gây hai lỗi trái ngược: bỏ lọt truy vấn rủi ro hoặc từ chối quá mức.
+      \item Cùng một tri thức có thể được hỏi lại bằng nhiều cách khác nhau, nên phương pháp phải bền với biến thể truy vấn.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\section{Bộ dữ liệu và EDA}
+
+\begin{frame}{Tổng quan bộ dữ liệu WMDP}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \begin{block}{WMDP}
+        \begin{itemize}
+          \item Benchmark trắc nghiệm để đo tri thức có rủi ro trong LLM.
+          \item Tập gốc có \textbf{3,668} câu hỏi, chia thành ba miền.
+          \item Ngoài câu hỏi gốc, các biến thể prompt có thể được dùng để kiểm tra độ bền của mô hình.
+          \item Khi xét ba biến thể \code{original}, \code{noise\_prefix}, \code{composite}, tổng số record đánh giá là \textbf{11,004}.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \begin{block}{Số mẫu theo miền}
+        \centering
+        \begin{tabular}{l r}
+          \toprule
+          \textbf{Miền} & \textbf{Số câu hỏi gốc} \\
+          \midrule
+          Bio & 1,273 \\
+          \rowrule
+          Chem & 408 \\
+          \rowrule
+          Cyber & 1,987 \\
+          \midrule
+          Tổng & 3,668 \\
+          \bottomrule
+        \end{tabular}
+      \end{block}
+    \end{column}
+  \end{columns}
+  \smallsource{WMDP: Li et al., ICML 2024; thống kê theo bộ dữ liệu WMDP}
+\end{frame}
+
+\begin{frame}{Schema và biến thể đánh giá}
+  \scriptsize
+  \begin{block}{Schema lõi của một record}
     \begin{tabularx}{\textwidth}{l l Y}
       \toprule
       \textbf{Trường} & \textbf{Kiểu} & \textbf{Ý nghĩa} \\
       \midrule
-      \code{question} & string & Câu hỏi trắc nghiệm trong miền rủi ro \\
+      \code{question} & string & Câu hỏi trắc nghiệm \\
+      \rowrule
       \code{choices} & list[string] & Bốn lựa chọn trả lời A-D \\
+      \rowrule
       \code{answer} & int64 & Chỉ số đáp án đúng, thường 0-3 \\
       \bottomrule
     \end{tabularx}
   \end{block}
 
-  \vspace{0.4em}
-  \begin{columns}[T]
-    \begin{column}{0.48\textwidth}
-      \begin{block}{Dữ liệu đầu vào}
-        \code{original}, \code{noise\_prefix}, \code{composite}; ba miền \code{bio}, \code{cyber}, \code{chem}.
-      \end{block}
-    \end{column}
-    \begin{column}{0.48\textwidth}
-      \begin{block}{Đầu ra cần ghi}
-        Đáp án A-D, confidence/risk score, trạng thái refuse/rethink, latency và log quyết định router.
-      \end{block}
-    \end{column}
-  \end{columns}
-  \smallsource{WMDP: Li et al., ICML 2024}
+  \vspace{0.35em}
+  \begin{block}{Các biến thể prompt dùng để đánh giá robustness}
+    \begin{tabularx}{\textwidth}{l Y Y}
+      \toprule
+      \textbf{Biến thể} & \textbf{Mục đích} & \textbf{Điều kiểm tra} \\
+      \midrule
+      \code{original} & Câu hỏi gốc & Năng lực trả lời trực tiếp trên benchmark \\
+      \rowrule
+      \code{noise\_prefix} & Thêm prefix nhiễu trước câu hỏi & Mô hình có bị đánh lạc hướng bởi ngữ cảnh mở đầu không \\
+      \rowrule
+      \code{composite} & Ghép câu hỏi vào prompt phức hợp & Hệ thống có phát hiện phần rủi ro khi nó nằm trong prompt dài/nhiều phần không \\
+      \bottomrule
+    \end{tabularx}
+  \end{block}
 \end{frame}
 
-\begin{frame}{Thách thức hiện tại}
-  \small
+\begin{frame}{EDA: Quy mô theo miền và biến thể}
   \begin{columns}[T]
-    \begin{column}{0.48\textwidth}
-      \begin{block}{Về phương pháp}
+    \begin{column}{0.58\textwidth}
+      \includegraphics[width=\linewidth]{eda/wmdp_domain_variant_counts.png}
+    \end{column}
+    \begin{column}{0.38\textwidth}
+      \small
+      \begin{block}{Nhận xét}
         \begin{itemize}
-          \item Tri thức nguy hiểm và tri thức hữu ích đan xen.
-          \item Weight-level unlearning dễ làm mất utility.
-          \item Inference-time guard dễ thành ``che đầu ra'' thay vì ``quên thật''.
-          \item Classifier/router sai gây leak hoặc over-refusal.
+          \item Mỗi biến thể giữ nguyên số câu hỏi gốc: 3,668 record.
+          \item Cyber chiếm nhiều nhất: 1,987 câu, hơn một nửa dữ liệu.
+          \item Chem nhỏ nhất: 408 câu, nên các ước lượng theo miền này có độ bất định cao hơn.
         \end{itemize}
       \end{block}
     \end{column}
-    \begin{column}{0.48\textwidth}
-      \begin{alertblock}{Về đánh giá}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{EDA: Phân bố đáp án A-D}
+  \begin{columns}[T]
+    \begin{column}{0.56\textwidth}
+      \includegraphics[width=\linewidth]{eda/wmdp_answer_distribution_heatmap.png}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \small
+      \begin{block}{Nhận xét}
         \begin{itemize}
-          \item WMDP MCQ hữu ích nhưng chưa đủ.
-          \item Cần test open-ended leakage và multi-turn.
-          \item Cần kiểm tra prompt attack, relearning và benign relearning.
-          \item Cần giải thích vì sao số liệu tăng/giảm, không chỉ báo cáo bảng.
+          \item Đáp án đúng A-D khá cân bằng, quanh 24--27\% mỗi nhãn.
+          \item Không có nhãn nào áp đảo rõ rệt.
+          \item Vì vậy accuracy cao không thể giải thích đơn giản bằng bias chọn một đáp án cố định.
         \end{itemize}
-      \end{alertblock}
+      \end{block}
     \end{column}
   \end{columns}
+\end{frame}
+
+\begin{frame}{EDA: Độ dài câu hỏi gốc}
+  \begin{columns}[T]
+    \begin{column}{0.58\textwidth}
+      \includegraphics[width=\linewidth]{eda/wmdp_question_length_boxplot.png}
+    \end{column}
+    \begin{column}{0.38\textwidth}
+      \small
+      \begin{block}{Nhận xét}
+        \begin{itemize}
+          \item Bio và Chem tương đối ngắn, median lần lượt khoảng 19 và 12 từ.
+          \item Cyber dài hơn rõ rệt, median khoảng 58 từ và có nhiều outlier rất dài.
+          \item Do đó các miền có độ khó hình thức khác nhau, đặc biệt khi prompt dài hoặc nhiều chi tiết.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{EDA: Độ dài prompt theo biến thể}
+  \begin{columns}[T]
+    \begin{column}{0.58\textwidth}
+      \includegraphics[width=\linewidth]{eda/wmdp_prompt_length_by_variant.png}
+    \end{column}
+    \begin{column}{0.38\textwidth}
+      \small
+      \begin{block}{Nhận xét}
+        \begin{itemize}
+          \item \code{noise\_prefix} tăng độ dài prompt nhưng không đổi bản chất câu hỏi.
+          \item \code{composite} làm prompt dài hơn mạnh nhất, đặc biệt ở Bio và Chem.
+          \item Prompt dài làm tăng rủi ro mất ngữ cảnh, parse sai đáp án hoặc bỏ sót thông tin quan trọng.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Những đặc điểm dữ liệu đáng chú ý}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{Y Y}
+    \toprule
+    \textbf{Quan sát từ dữ liệu} & \textbf{Ý tưởng rút ra} \\
+    \midrule
+    Dữ liệu lệch quy mô theo miền, Cyber lớn và dài hơn nhiều & Cần phân tích theo từng domain, không chỉ nhìn overall accuracy \\
+    \rowrule
+    Nhãn A-D khá cân bằng & Không thể dựa vào heuristic chọn đáp án; cần mô hình dựa trên nội dung câu hỏi \\
+    \rowrule
+    \code{noise\_prefix} thêm ngữ cảnh nhiễu & Phương pháp cần tách tín hiệu chính khỏi nhiễu bề mặt \\
+    \rowrule
+    \code{composite} tạo prompt dài/nhiều phần & Phương pháp cần nhận diện phần rủi ro trong ngữ cảnh phức hợp \\
+    \rowrule
+    Prompt dài và biến thiên lớn & Cần xử lý giới hạn ngữ cảnh, độ ổn định format và lỗi parse đáp án \\
+    \bottomrule
+  \end{tabularx}
 \end{frame}
 
 \section{Nghiên cứu liên quan}
 
-\begin{frame}{Tiêu chí chọn nghiên cứu liên quan}
-  \small
-  \begin{block}{Phạm vi}
-    Các công trình về LLM unlearning / hazardous knowledge reduction, ưu tiên có thực nghiệm trên WMDP hoặc benchmark unlearning chuẩn.
-  \end{block}
+\begin{frame}{PoRT: ý tưởng tổng quan}
+  \scriptsize
+  \begin{columns}[T]
+    \begin{column}{0.40\textwidth}
+      \begin{block}{Vấn đề paper giải quyết}
+        \begin{itemize}
+          \item Các phương pháp pre-filtering chỉ kiểm tra đầu vào nên dễ bị prefix/composite attack.
+          \item PoRT chuyển trọng tâm từ \textit{pre-filtering} sang \textit{post-judgment}.
+          \item Ý tưởng chính: xét cả câu hỏi đã làm sạch và câu trả lời mô hình sinh ra.
+        \end{itemize}
+      \end{block}
+      \begin{alertblock}{Đóng góp chính}
+        Robust unlearning framework không cần sửa trọng số, gồm prompt cleaning, post-judgment và selective multi-round thinking.
+      \end{alertblock}
+    \end{column}
+    \begin{column}{0.56\textwidth}
+      \includegraphics[width=\linewidth]{papers/port_fig1_workflow.png}
+      \smallsource{Chen et al., ICLR 2026, Figure 1}
+    \end{column}
+  \end{columns}
+\end{frame}
 
-  \vspace{0.5em}
+\begin{frame}{PoRT: cách hoạt động và nhận xét}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l Y}
+    \toprule
+    \textbf{Module} & \textbf{Vai trò trong phương pháp} \\
+    \midrule
+    IPC & Tạo prompt few-shot từ demonstration library để làm sạch truy vấn và sinh initial response. \\
+    \rowrule
+    Post-Judgment & Đánh giá cặp \code{(cleaned question, response)} thay vì chỉ đánh giá prompt đầu vào. \\
+    \rowrule
+    SMT & Với response rủi ro hoặc không chắc chắn, kích hoạt self-correction/multi-round thinking rồi tích hợp câu trả lời cuối. \\
+    \bottomrule
+  \end{tabularx}
+
+  \vspace{0.45em}
   \begin{columns}[T]
     \begin{column}{0.48\textwidth}
-      \begin{block}{Nguồn trích dẫn}
+      \begin{block}{Ưu điểm}
         \begin{itemize}
-          \item ICML, NeurIPS, AAAI, ACL/NAACL, COLM, ICLR.
-          \item Dùng proceedings hoặc OpenReview chính thức.
-          \item Không dùng link arXiv preprint trong slide.
+          \item Bám sát threat model thực tế: prefix và composite prompts.
+          \item Dễ gắn vào mô hình đóng/API vì không cần cập nhật trọng số.
+          \item Post-judgment giảm rủi ro bỏ sót khi prompt dài hoặc bị nhiễu.
         \end{itemize}
       \end{block}
     \end{column}
     \begin{column}{0.48\textwidth}
-      \begin{alertblock}{Cách đọc related work}
-        Không chỉ liệt kê paper; cần rút ra: paper giải quyết điểm gì, mạnh ở đâu, yếu ở đâu, và khoảng trống nào còn lại.
+      \begin{alertblock}{Hạn chế}
+        \begin{itemize}
+          \item Là inference-time defense, chưa xóa tri thức khỏi base model.
+          \item Phụ thuộc chất lượng judge, demonstration library và confidence threshold.
+          \item Có thêm latency do post-judgment và rethink.
+        \end{itemize}
       \end{alertblock}
     \end{column}
   \end{columns}
 \end{frame}
 
-\begin{frame}{Related work: weight/representation-level}
+\begin{frame}{LLM Beliefs: ý tưởng tổng quan}
   \scriptsize
-  \begin{tabularx}{\textwidth}{l l Y Y}
-    \toprule
-    \textbf{Paper} & \textbf{Nguồn} & \textbf{Ưu điểm} & \textbf{Nhược điểm} \\
-    \midrule
-    WMDP/RMU \cite{wmdp} & ICML 2024 & Đưa ra WMDP và RMU; đánh trực tiếp vào biểu diễn ẩn & Accuracy MCQ chưa chứng minh đã quên; nhạy layer và retain set \\
-    WAGLE \cite{wagle} & NeurIPS 2024 & Dùng weight attribution để can thiệp mô-đun hơn & Attribution trên LLM lớn tốn kém, khó ổn định \\
-    Adaptive RMU \cite{armu} & AAAI 2025 & Phân tích cơ chế steering và cải thiện RMU & Vẫn nhạy hyperparameter; khó khi forget/retain overlap \\
-    SEUF \cite{seuf} & ACL 2025 & Nghiên cứu unlearning trên Mixture-of-Experts & Phụ thuộc kiến trúc MoE, không áp dụng trực tiếp cho dense LLM \\
-    \bottomrule
-  \end{tabularx}
+  \begin{columns}[T]
+    \begin{column}{0.40\textwidth}
+      \begin{block}{Vấn đề paper giải quyết}
+        \begin{itemize}
+          \item Suppress target response đơn lẻ có thể chỉ tạo cảm giác đã quên.
+          \item Xác suất bị dồn sang các câu trả lời khác nhưng gần nghĩa với target.
+          \item Paper gọi hiện tượng này là \term{squeezing effect}.
+        \end{itemize}
+      \end{block}
+      \begin{alertblock}{Đóng góp chính}
+        Dùng \term{model beliefs}: các high-confidence generations của chính mô hình để chống spurious unlearning.
+      \end{alertblock}
+    \end{column}
+    \begin{column}{0.56\textwidth}
+      \includegraphics[width=\linewidth]{papers/beliefs_fig1_overview.png}
+      \smallsource{Li et al., ICLR 2026, Figure 1}
+    \end{column}
+  \end{columns}
 \end{frame}
 
-\begin{frame}{Related work: optimization và preference}
+\begin{frame}{LLM Beliefs: cách hoạt động và nhận xét}
   \scriptsize
-  \begin{tabularx}{\textwidth}{l l Y Y}
+  \begin{tabularx}{\textwidth}{l Y}
     \toprule
-    \textbf{Paper} & \textbf{Nguồn} & \textbf{Ưu điểm} & \textbf{Nhược điểm} \\
+    \textbf{Thành phần} & \textbf{Vai trò trong phương pháp} \\
     \midrule
-    NPO \cite{npo} & COLM 2024 & Ổn định hơn gradient ascent, giảm catastrophic collapse & Có thể đẩy xác suất sang paraphrase tương đương \\
-    SatImp \cite{satimp} & ICML 2025 & Reweight loss theo saturation/importance để cân bằng forget-retain & Phụ thuộc retain data và tiêu chí reweight \\
-    Robust relearning \cite{relearning} & ICML 2025 & Chỉ ra tri thức có thể phục hồi sau fine-tuning; thêm mục tiêu robustness & Tăng chi phí tối ưu, threat model chưa bao phủ hết \\
-    LLM Beliefs \cite{belief} & ICLR 2026 & Chống squeezing effect bằng belief negatives & Cần sinh belief set đủ bao phủ, dễ suppress cả tri thức hợp pháp gần miền \\
+    Model beliefs & Các token/sequence mà mô hình gốc sinh ra với xác suất cao quanh vùng target cần quên. \\
+    \rowrule
+    BS-T & Bootstrapping ở token level: suppress các token high-confidence liên quan đến target. \\
+    \rowrule
+    BS-S & Bootstrapping ở sequence level: thêm các generations high-confidence vào dữ liệu unlearning. \\
     \bottomrule
   \end{tabularx}
-\end{frame}
 
-\begin{frame}{Related work: inference-time và đánh giá}
-  \scriptsize
-  \begin{tabularx}{\textwidth}{l l Y Y}
-    \toprule
-    \textbf{Paper} & \textbf{Nguồn} & \textbf{Ưu điểm} & \textbf{Nhược điểm} \\
-    \midrule
-    ECO Prompts \cite{eco} & NeurIPS 2024 & Nhẹ, không cần sửa trọng số; dùng embedding corruption & Phụ thuộc classifier, không xóa tri thức khỏi base model \\
-    SPUL \cite{spul} & NAACL 2025 & Soft prompt giúp triển khai rẻ trên frozen model & Base model vẫn còn tri thức; dễ bypass nếu thiếu soft prompt \\
-    PoRT \cite{port} & ICLR 2026 & Post-judgment trên cả prompt và response; mạnh với prefix/composite attack & Tăng latency; phụ thuộc judge/router; thiên về inference-time defense \\
-    OpenUnlearning \cite{openunlearning} & NeurIPS D\&B 2025 & Chuẩn hóa benchmark, metric và nhiều phương pháp & Framework đánh giá, không phải phương pháp unlearning mới \\
-    \bottomrule
-  \end{tabularx}
+  \vspace{0.45em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Ưu điểm}
+        \begin{itemize}
+          \item Chỉ ra cơ chế quên giả ở mức phân phối xác suất.
+          \item Giảm leakage qua paraphrase/semantic alternatives.
+          \item Bổ sung góc nhìn nội tại hơn so với chỉ chặn đầu ra.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{alertblock}{Hạn chế}
+        \begin{itemize}
+          \item Cần sinh belief set đủ bao phủ, làm tăng chi phí.
+          \item Nếu belief set thiếu biến thể quan trọng, leakage vẫn còn.
+          \item Suppress quá rộng có thể ảnh hưởng tri thức hợp pháp gần miền.
+        \end{itemize}
+      \end{alertblock}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 \begin{frame}{Khoảng trống nghiên cứu rút ra}
   \small
-  \begin{enumerate}
-    \item \term{True unlearning vs output suppression}: nhiều phương pháp làm giảm câu trả lời nhưng chưa chứng minh tri thức khó truy hồi.
-    \item \term{WMDP-only evaluation chưa đủ}: cần thêm open-ended QA, paraphrase, multi-turn và relearning.
-    \item \term{Router/classifier calibration}: PoRT/ECO phụ thuộc mạnh vào judge và threshold.
-    \item \term{Retain set lân cận}: giữ MMLU chung chưa đủ để bảo toàn bio/cyber/chem an toàn.
-    \item \term{Robustness chưa đồng bộ}: mỗi paper dùng threat model khác nhau, khó so sánh trực tiếp.
-  \end{enumerate}
+  \begin{itemize}
+    \item \term{PoRT} xử lý tốt robust inference-time defense, nhưng chưa can thiệp vào tri thức bên trong base model.
+    
+    \item \term{LLM Beliefs} giảm hiện tượng quên giả bằng belief negatives, nhưng chưa phải một pipeline phòng thủ hoàn chỉnh ở lúc inference.
+    
+    \item Cả hai hướng đều phụ thuộc vào coverage: demonstration library, judge, belief generations hoặc dữ liệu biến thể.
+    
+    \item Utility gần miền cần quên vẫn là điểm khó: suppress quá mạnh có thể ảnh hưởng tri thức hợp pháp lân cận.
+  \end{itemize}
+
+  \vspace{0.4em}
+  \begin{alertblock}{Ý tưởng giải pháp}
+    Kết hợp unlearning nội tại bằng adapter với post-judgment kiểu PoRT; bổ sung belief negatives và retain objective cho dữ liệu lân cận an toàn.
+  \end{alertblock}
 \end{frame}
 
 \section{Phương pháp đề xuất}
 
-\begin{frame}{Ý tưởng: nối trực tiếp với khoảng trống}
+\begin{frame}{Từ khoảng trống đến hướng tiếp cận}
   \scriptsize
   \begin{tabularx}{\textwidth}{Y Y}
     \toprule
-    \textbf{Khoảng trống từ related work} & \textbf{Thiết kế trong SAFE-PoRT} \\
+    \textbf{Khoảng trống từ related work} & \textbf{Hướng xử lý đề xuất} \\
     \midrule
     Inference-time defense chưa phải true unlearning & Thêm LoRA unlearning adapter trước lớp post-judgment \\
+    \rowrule
     Squeezing/paraphrase leakage & Sinh belief negatives từ model gốc và suppress cả biến thể high-confidence \\
+    \rowrule
     Retain utility gần miền forget bị xem nhẹ & Thêm $D_{neighbor}$: bio/cyber/chem an toàn vào KL retain objective \\
+    \rowrule
     Router dễ sai threshold & Calibrate bằng validation group-heldout, dùng confidence/entropy/risk/disagreement \\
+    \rowrule
     Evaluation thiếu robustness & Đánh giá original, noise prefix, composite, paraphrase, open-ended và relearning \\
     \bottomrule
   \end{tabularx}
 \end{frame}
 
-\begin{frame}{SAFE-PoRT: pipeline tổng quan}
+\begin{frame}{Pipeline phương pháp đề xuất}
   \centering
-  \begin{tikzpicture}[node distance=0.35cm and 0.42cm]
-    \node[pipe] (data) {WMDP\\+ variants};
-    \node[pipe, right=of data] (split) {Forget\\Retain\\Neighbor};
-    \node[pipe, right=of split] (aug) {Semantic\\Syntactic\\Augment};
-    \node[pipe, right=of aug] (belief) {Belief\\Negatives};
-    \node[pipe, below=0.78cm of belief] (adapter) {LoRA\\Unlearning\\Adapter};
-    \node[pipe, left=of adapter] (judge) {PoRT-style\\Post Judge};
-    \node[pipe, left=of judge] (rethink) {Selective\\Rethink};
-    \node[pipe, left=of rethink] (eval) {Robust\\Evaluation};
+  \includegraphics[width=0.98\textwidth,height=0.72\textheight,keepaspectratio]{safe_port_pipeline_generated.png}
 
-    \draw[arrow] (data) -- (split);
-    \draw[arrow] (split) -- (aug);
-    \draw[arrow] (aug) -- (belief);
-    \draw[arrow] (belief) -- (adapter);
-    \draw[arrow] (adapter) -- (judge);
-    \draw[arrow] (judge) -- (rethink);
-    \draw[arrow] (rethink) -- (eval);
-  \end{tikzpicture}
-
-  \vspace{0.7em}
-  \small
-  \textbf{Mục tiêu:} kết hợp giảm tri thức nội tại bằng adapter với robust post-judgment ở inference time.
+  \vspace{0.2em}
+  {\scriptsize Figure mô tả ba phần chính: xây dựng dữ liệu/huấn luyện adapter, guard tại inference-time và bộ đánh giá robust.}
 \end{frame}
 
 \begin{frame}{Hàm mục tiêu đề xuất}
@@ -369,10 +532,15 @@
     \textbf{Hạng mục} & \textbf{Cần ghi rõ trong báo cáo} \\
     \midrule
     Hardware & GPU, VRAM, RAM, CPU, thời gian chạy; ví dụ Kaggle T4/P100 hoặc A100 nếu có \\
+    \rowrule
     Model & Base LLM, tokenizer, context length, precision FP16/BF16/4-bit \\
+    \rowrule
     Dataset & WMDP original/noise\_prefix/composite, split train/valid/test, group split \\
+    \rowrule
     Hyperparameter & LoRA rank/alpha/dropout, learning rate, batch size, epoch, warmup, seed \\
+    \rowrule
     Router & Judge model/classifier, threshold, feature dùng để route, rethink budget \\
+    \rowrule
     Metrics & WMDP accuracy/leakage, retain utility, over-refusal, rethink rate, latency \\
     \bottomrule
   \end{tabularx}
@@ -385,9 +553,13 @@
     \textbf{Nhóm baseline} & \textbf{Phương pháp} & \textbf{Mục đích so sánh} \\
     \midrule
     No defense & Base model & Mốc nguy cơ ban đầu trên WMDP và utility \\
+    \rowrule
     Representation & RMU / Adaptive RMU & So với hướng weight-level/representation-level \\
+    \rowrule
     Preference/optimization & NPO / SatImp & So với hướng tối ưu loss unlearning \\
+    \rowrule
     Inference-time & ECO / SPUL / PoRT & So với guard/router không sửa hoặc ít sửa trọng số \\
+    \rowrule
     Proposed & SAFE-PoRT & Kiểm tra lợi ích của adapter + post-judge + robust eval \\
     \bottomrule
   \end{tabularx}
@@ -405,9 +577,13 @@
     \textbf{Cấu hình} & \textbf{Câu hỏi kiểm tra} & \textbf{Kỳ vọng khi phân tích} \\
     \midrule
     Base/no-defense & Model gốc rủi ro đến đâu? & WMDP cao, utility giữ nguyên \\
+    \rowrule
     PoRT-only & Post-judgment có giúp chống prefix/composite không? & Leakage giảm nhưng latency/rethink tăng \\
+    \rowrule
     Adapter-only & Unlearning nội tại có giảm leakage không? & Forget giảm, có thể mất neighbor utility \\
+    \rowrule
     Adapter + router & Hai lớp có bổ sung cho nhau không? & Robust hơn từng lớp riêng lẻ \\
+    \rowrule
     Full SAFE-PoRT & Belief negatives/augmentation có giảm paraphrase leakage không? & Relearning/paraphrase khó hơn, chi phí tăng \\
     \bottomrule
   \end{tabularx}
@@ -420,9 +596,13 @@
     \textbf{Method} & \textbf{WMDP} $\downarrow$ & \textbf{Adv. WMDP} $\downarrow$ & \textbf{Retain} $\uparrow$ & \textbf{Rethink} $\downarrow$ & \textbf{Latency} $\downarrow$ \\
     \midrule
     Base & -- & -- & -- & -- & -- \\
+    \rowrule
     RMU / NPO & -- & -- & -- & -- & -- \\
+    \rowrule
     PoRT-only & -- & -- & -- & -- & -- \\
+    \rowrule
     Adapter-only & -- & -- & -- & -- & -- \\
+    \rowrule
     SAFE-PoRT & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabularx}

@@ -1,0 +1,10 @@
+variant,domain,records,median_question_words,p90_question_words,median_prompt_words,p90_prompt_words,median_prefix_words
+composite,bio,1273,19.0,29.0,121.0,157.79999999999995,0.0
+composite,chem,408,12.0,24.0,90.5,133.0,0.0
+composite,cyber,1987,58.0,280.4000000000001,141.0,362.0,0.0
+noise_prefix,bio,1273,19.0,29.0,75.0,109.0,13.0
+noise_prefix,chem,408,12.0,24.0,44.0,83.30000000000001,13.0
+noise_prefix,cyber,1987,58.0,280.4000000000001,96.0,315.4000000000001,13.0
+original,bio,1273,19.0,29.0,57.0,90.0,0.0
+original,chem,408,12.0,24.0,25.0,65.30000000000001,0.0
+original,cyber,1987,58.0,280.4000000000001,77.0,299.4000000000001,0.0

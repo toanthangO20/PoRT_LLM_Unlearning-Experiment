@@ -10,3 +10,6 @@
 *.toc
 *.vrb
 tools/
+
+!images/
+!images/**
