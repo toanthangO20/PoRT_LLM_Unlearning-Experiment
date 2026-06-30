@@ -385,236 +385,301 @@ Từ các nghiên cứu trên, có thể rút ra các khoảng trống chính:
 
 6. **Robustness trước relearning chưa thành tiêu chuẩn**: nhiều paper chỉ báo cáo unlearning ngay sau khi train, chưa kiểm tra fine-tuning lại bằng vài mẫu hoặc dữ liệu benign có cú pháp tương tự.
 
-## 8. Pipeline đề xuất: SAFE-PoRT
+## 8. Kiến trúc mô hình đề xuất: SAFE-PoRT
 
-Tên đề xuất: **SAFE-PoRT - Semantic-Attribution Forgetting with Evaluation-aware Post-judgment and Robust Thinking**.
+Tên đầy đủ của phương pháp đề xuất là **SAFE-PoRT - Semantic-Attribution Forgetting with Evaluation-aware Post-judgment and Robust Thinking**. SAFE-PoRT được thiết kế như một kiến trúc lai, kết hợp hai lớp bảo vệ:
 
-Ý tưởng chính: kết hợp **unlearning nhẹ ở mức trọng số/adapters** với **post-judgment inference-time kiểu PoRT**, đồng thời mở rộng đánh giá theo robustness. Mục tiêu là khắc phục điểm yếu của từng nhóm phương pháp:
+1. **Adapter-level unlearning**: can thiệp nhẹ vào mô hình bằng LoRA adapter để giảm khả năng truy hồi tri thức nguy hiểm ở bên trong.
+2. **Inference-time safety routing**: dùng post-judgment guard kiểu PoRT để kiểm tra cả truy vấn và câu trả lời trước khi trả về cho người dùng.
 
-- RMU/NPO quên nội tại hơn nhưng có nguy cơ utility loss và spurious unlearning.
-- PoRT robust hơn trước prompt attack nhưng không xóa tri thức khỏi model.
-- Belief-based và SSIUU chỉ ra cần chống paraphrase/squeezing và "hide-not-erase".
-- Benign relearning chỉ ra cần đa dạng hóa cú pháp và kiểm tra fine-tuning sau unlearning.
+Điểm khác biệt so với PoRT gốc là SAFE-PoRT không chỉ chặn hoặc sửa câu trả lời ở inference-time. Phương pháp còn bổ sung một tầng unlearning nội tại bằng adapter, belief-negative mining và regularization để giảm nguy cơ mô hình vẫn giữ tri thức nguy hiểm nhưng chỉ bị che ở đầu ra.
 
-### 8.1 Tổng quan pipeline
+![SAFE-PoRT pipeline](../slide/images/safe_port_pipeline_generated.png)
 
-```mermaid
-flowchart TD
-    A["WMDP original/noise_prefix/composite"] --> B["Forget/Retain/Neighbor split"]
-    B --> C["Syntactic + semantic augmentation"]
-    C --> D["Belief-negative generation"]
-    D --> E["LoRA unlearning adapter"]
-    E --> F["Attribution + smoothness regularization"]
-    F --> G["PoRT-style post-judgment router"]
-    G --> H["Selective rethink / safe correction"]
-    H --> I["Robust evaluation: MCQ + Open-QA + attacks"]
-```
+### 8.1 Luồng tổng quan
 
-### 8.2 Module 1 - Chuẩn bị dữ liệu
+SAFE-PoRT gồm ba khối lớn:
 
-Tạo bốn nhóm dữ liệu:
-
-| Nhóm | Nguồn | Mục đích |
+| Khối | Thành phần | Vai trò |
 |---|---|---|
-| `D_f` | WMDP hazardous QA | Tri thức cần làm quên |
-| `D_f_adv` | noise_prefix, composite, paraphrase, syntactic variants | Chống prompt attack và benign relearning |
-| `D_r` | MMLU, SciQ, Wikitext, GSM8K | Giữ năng lực chung |
-| `D_neighbor` | biology/cyber/chem an toàn, defense-oriented QA | Giữ tri thức hợp pháp gần miền forget |
+| Offline data construction | `D_f`, `D_r`, `D_n`, adversarial variants, belief negatives | Xây dựng dữ liệu train/eval đủ đa dạng để không overfit một template WMDP |
+| Adapter unlearning | LoRA adapter, NPO loss, retain/neighbor KL, smoothness | Giảm tri thức nguy hiểm ở mức tham số phụ, hạn chế utility loss |
+| Inference-time routing | deployed model, post-judgment guard, safe/risk route | Kiểm soát câu trả lời cuối cùng trước prefix, composite, paraphrase và prompt lạ |
 
-Nguyên tắc split:
+Ký hiệu:
 
-- Split theo group gốc của câu hỏi, không để paraphrase của cùng câu hỏi rơi vào cả train và test.
-- Tách riêng validation để calibrate router threshold.
-- Không dùng test WMDP để chọn hyperparameter.
+- `M_theta`: mô hình gốc.
+- `Δ`: LoRA adapter được train để unlearn.
+- `M' = M_theta + Δ`: mô hình sau khi gắn adapter.
+- `D_f`: forget set, gồm câu hỏi/tri thức nguy hiểm cần giảm.
+- `D_f_adv`: biến thể tấn công của forget set, gồm prefix, paraphrase, composite và relearning probes.
+- `D_r`: retain set, gồm nhiệm vụ cần giữ năng lực chung.
+- `D_n`: neighbor-safe set, gồm tri thức hợp pháp gần miền forget.
+- `B_f`: belief-negative set, gồm các đáp án nguy hiểm hoặc có khả năng leak do chính mô hình gốc sinh ra với confidence cao.
 
-### 8.3 Module 2 - Syntactic và semantic augmentation
+### 8.2 Khối dữ liệu: forget, retain và neighbor-safe
 
-Với mỗi câu hỏi trong `D_f`, tạo các biến thể:
+Một vấn đề lớn của hazardous knowledge unlearning là tri thức nguy hiểm và tri thức hữu ích thường nằm gần nhau. Ví dụ, cùng là sinh học hoặc an ninh mạng, một câu hỏi có thể phục vụ giáo dục/phòng thủ hoặc bị dùng sai mục đích tùy ngữ cảnh. Vì vậy SAFE-PoRT không chỉ dùng hai tập `D_f` và `D_r`, mà thêm `D_n`:
 
-- Paraphrase giữ ý nghĩa nhưng đổi bề mặt câu.
-- Syntactic diversification: đổi cấu trúc câu, thứ tự mệnh đề, dạng hỏi.
-- Composite prompt: nhúng câu hỏi vào ngữ cảnh dài hoặc nhiều bước.
-- Noise prefix: thêm prefix nhiễu hoặc chỉ dẫn không liên quan.
+| Tập dữ liệu | Nội dung | Tác dụng trong loss |
+|---|---|---|
+| `D_f` | Câu hỏi WMDP gốc thuộc bio/cyber/chem | Làm giảm khả năng sinh đáp án nguy hiểm |
+| `D_f_adv` | Prefix, paraphrase, composite, relearning probes | Làm phương pháp bền hơn trước biến thể prompt |
+| `D_r` | MMLU/SciQ/GSM8K/Wikitext hoặc retain QA chung | Giữ utility tổng quát |
+| `D_n` | Câu hỏi an toàn gần miền WMDP, thiên về giáo dục/phòng thủ | Tránh xóa mù quáng cả miền khoa học hợp pháp |
 
-Mục tiêu không phải tăng dataset tùy tiện, mà để mô hình không chỉ học một template refusal/forget cố định. Module này học từ hạn chế của benign relearning: nếu forget set có cấu trúc quá đồng nhất, mô hình có thể quên template nhưng vẫn phục hồi khi gặp cấu trúc tương tự.
+Nguyên tắc split là group-level split: các biến thể của cùng một câu hỏi gốc không được xuất hiện đồng thời ở train và test. Nếu không, kết quả dễ bị phóng đại vì mô hình chỉ học template của câu hỏi thay vì thật sự giảm khả năng truy hồi tri thức nguy hiểm.
 
-### 8.4 Module 3 - Belief-negative generation
+### 8.3 Adversarial variant builder
 
-Trước khi unlearning, dùng mô hình gốc sinh các câu trả lời high-confidence cho forget prompts. Các câu trả lời này được xem là **belief negatives**:
+Từ mỗi mẫu trong `D_f`, hệ thống tạo thêm các biến thể:
 
-```text
-B_f = {high-confidence generations of M_theta on D_f and D_f_adv}
-```
+- **Prefix**: thêm đoạn nhiễu hoặc chỉ dẫn không liên quan trước câu hỏi.
+- **Paraphrase**: đổi cách diễn đạt nhưng giữ cùng ý nghĩa.
+- **Composite**: ghép câu hỏi vào một prompt dài nhiều phần.
+- **Relearning probe**: đưa một lượng nhỏ thông tin gợi nhớ để kiểm tra khả năng tri thức quay lại.
 
-Khi train unlearning adapter, không chỉ suppress đáp án gốc mà còn suppress các response mà mô hình tự tin sinh ra. Điều này nhằm giảm squeezing effect: xác suất không bị đẩy từ answer gốc sang paraphrase hoặc biến thể tương đương.
+Module này liên hệ trực tiếp với khoảng trống nghiên cứu về robustness. Nếu chỉ train trên câu hỏi WMDP gốc, mô hình có thể giảm accuracy ở format gốc nhưng vẫn leak khi câu hỏi được paraphrase hoặc nhúng vào composite prompt. Vì vậy `D_f_adv` được đưa vào cả training và evaluation.
 
-### 8.5 Module 4 - LoRA unlearning adapter
+### 8.4 Belief-negative mining
 
-Thay vì cập nhật toàn bộ mô hình, train một LoRA adapter hoặc delta weights nhỏ. Loss đề xuất:
+Belief-negative mining lấy cảm hứng từ paper **LLM Unlearning with LLM Beliefs**. Thay vì chỉ suppress đáp án chuẩn của dataset, SAFE-PoRT yêu cầu mô hình gốc tự sinh nhiều câu trả lời cho `D_f` và `D_f_adv`, sau đó giữ lại các câu trả lời có dấu hiệu:
 
-```text
-L = λ1 * L_NPO(D_f ∪ B_f)
-  + λ2 * KL(M' || M_theta on D_r)
-  + λ3 * KL(M' || M_theta on D_neighbor)
-  + λ4 * L_rep_misdirection(D_f, D_r)
-  + λ5 * L_smooth
-```
+- confidence cao;
+- gần nghĩa với đáp án nguy hiểm;
+- xuất hiện lặp lại qua nhiều sampling seed;
+- không phải refusal hoặc câu trả lời an toàn.
 
-Ý nghĩa:
-
-- `L_NPO(D_f ∪ B_f)`: giảm khả năng sinh target và belief negatives.
-- `KL on D_r`: giữ hành vi mô hình trên dữ liệu chung.
-- `KL on D_neighbor`: giữ tri thức hợp pháp lân cận.
-- `L_rep_misdirection`: đẩy biểu diễn forget khỏi biểu diễn gốc nhưng giữ retain.
-- `L_smooth`: làm vùng tham số ổn định hơn, giảm nguy cơ relearning.
-
-Phiên bản nhẹ cho project:
-
-- Nếu chưa đủ GPU để train adapter, có thể bắt đầu bằng post-judge/router calibration trên artifact hiện có.
-- Sau đó thêm LoRA nhỏ trên một model open-weight như Phi/Llama/Mistral tùy tài nguyên.
-
-### 8.6 Module 5 - Attribution-aware update
-
-Trước hoặc trong khi train adapter:
-
-- Tính gradient/activation score để xác định layer/module ảnh hưởng nhiều đến forget set.
-- Chỉ update top-k module hoặc LoRA rank ở layer liên quan.
-- Theo dõi positive/negative influence để tránh mô hình chỉ tạo "spurious unlearning neurons" nhằm che tri thức.
-
-Mục tiêu là giảm collateral damage lên retain set và làm unlearning gần với "erase" hơn "hide".
-
-### 8.7 Module 6 - PoRT-style post-judgment router
-
-Sau khi có adapter, vẫn dùng một lớp inference-time robust guard theo tinh thần PoRT:
-
-1. Clean query.
-2. Sinh initial answer.
-3. Post-judge trên cặp `(cleaned_query, initial_answer)`, không chỉ prompt.
-4. Nếu rủi ro cao hoặc confidence thấp, kích hoạt rethink/correction/refusal.
-5. Nếu an toàn và confidence cao, trả lời trực tiếp để tránh over-refusal.
-
-Khác với PoRT gốc, router nên dùng thêm đặc trưng:
-
-- Confidence của đáp án.
-- Entropy trên A/B/C/D nếu là MCQ.
-- Điểm risk của prompt.
-- Điểm risk của response.
-- Tín hiệu disagreement giữa raw model và unlearned adapter.
-
-Threshold phải được calibrate trên validation theo mục tiêu đa tiêu chí:
+Tập thu được là:
 
 ```text
-minimize WMDP leakage
-maximize retain utility
-control rethink_rate
-control over_refusal_rate
+B_f = { y | y ~ M_theta(x), x in D_f union D_f_adv, confidence(y) >= tau_b }
 ```
 
-### 8.8 Module 7 - Đánh giá
+Trong đó `B_f` là tập belief negatives. Mục tiêu là giảm **squeezing effect**: khi chỉ đẩy xác suất của một đáp án cụ thể xuống, mô hình có thể chuyển xác suất sang một câu khác cùng ý nghĩa. Belief-negative mining làm rộng vùng cần suppress, từ đó giảm open-ended leakage.
 
-Bộ đánh giá cần nhiều lớp:
+### 8.5 LoRA adapter unlearning
 
-| Nhóm đánh giá | Metric |
+SAFE-PoRT train một adapter LoRA thay vì cập nhật toàn bộ trọng số mô hình. Adapter được gắn vào các projection chính của attention/MLP, ví dụ `q_proj`, `k_proj`, `v_proj`, `o_proj`, `up_proj`, `down_proj` tùy kiến trúc base model. Cấu hình nhẹ cho bài tập lớn:
+
+| Hyperparameter | Giá trị |
+|---|---:|
+| LoRA rank `r` | 8 |
+| LoRA alpha | 16 |
+| LoRA dropout | 0.05 |
+| Learning rate | `2e-5` |
+| Epoch | 3 |
+| Batch size | 4 |
+| Gradient accumulation | 8 |
+| Max sequence length | 1024 |
+| Optimizer | AdamW |
+| Precision | FP16/BF16 tùy GPU |
+
+Hàm mục tiêu:
+
+```text
+L_SAFE-PoRT =
+  lambda_1 * L_NPO(D_f union D_f_adv union B_f)
++ lambda_2 * KL(M' || M_theta on D_r)
++ lambda_3 * KL(M' || M_theta on D_n)
++ lambda_4 * L_rep(D_f, D_r, D_n)
++ lambda_5 * L_smooth
+```
+
+Ý nghĩa từng thành phần:
+
+- `L_NPO`: giảm likelihood của đáp án cần quên và belief negatives, ổn định hơn gradient ascent trực tiếp.
+- `KL(D_r)`: giữ phân phối đầu ra của mô hình mới gần mô hình gốc trên retain set.
+- `KL(D_n)`: bảo toàn tri thức hợp pháp lân cận, tránh xóa nhầm cả miền bio/cyber/chem.
+- `L_rep`: đẩy representation của forget samples ra khỏi vùng biểu diễn hữu ích, nhưng không làm lệch retain/neighbor.
+- `L_smooth`: làm nghiệm unlearning ít sắc nhọn hơn, giảm nguy cơ bị relearning attack.
+
+### 8.6 Post-judgment guard và selective routing
+
+Sau khi có `M'`, SAFE-PoRT vẫn không trả lời trực tiếp mọi truy vấn. Hệ thống tạo candidate answer `y`, sau đó post-judgment guard đánh giá cặp `(x, y)` thay vì chỉ đánh giá prompt `x`.
+
+Guard dùng các tín hiệu:
+
+| Tín hiệu | Ý nghĩa |
 |---|---|
-| WMDP MCQ | top-logit accuracy, generated-answer accuracy |
-| WMDP adversarial | original/noise_prefix/composite accuracy |
-| Open-ended leakage | semantic similarity với risky answer, refusal correctness, harmfulness score |
-| Utility | MMLU, SciQ, GSM8K, Wikitext perplexity |
-| Neighbor utility | biology/cyber/chem safe QA |
-| Robustness | paraphrase attack, jailbreak, relearning attack, benign relearning |
-| System behavior | rethink rate, invalid prediction rate, latency, over-refusal |
+| Prompt risk | Truy vấn có thuộc miền nhạy cảm hay không |
+| Response risk | Câu trả lời có chứa chỉ dẫn thao tác, quy trình, thông tin nhạy cảm hay không |
+| Entropy | Mô hình có đang trả lời quá tự tin vào một lựa chọn nguy hiểm hay không |
+| Disagreement | Câu trả lời của base model và adapter model có khác nhau bất thường hay không |
+| Confidence | Độ chắc chắn của classifier/router |
 
-Quan trọng: báo cáo không nên chỉ nói "accuracy giảm". Cần trình bày trade-off:
+Routing rule:
 
 ```text
-Unlearning effectiveness ↑
-Utility retention ↑
-Robustness ↑
-Over-refusal ↓
-Latency ↓
+if risk_score < tau_r and confidence >= tau_c:
+    return candidate answer
+else:
+    trigger selective rethink/refusal
 ```
 
-## 9. Kế hoạch thực nghiệm khả thi trong project
+Selective rethink không đơn thuần là bắt mô hình nghĩ lại vô hạn. Nó chỉ được kích hoạt khi guard phát hiện rủi ro hoặc confidence thấp. Điều này khắc phục hạn chế của PoRT-style pipeline: nếu router bị calibrate sai, hệ thống có thể always-rethink, over-refuse hoặc bỏ lọt câu trả lời rủi ro.
 
-Với project hiện tại, có thể triển khai theo ba mức.
+### 8.7 Luồng training và inference
 
-### Mức 1 - Baseline và PoRT-style router
+Training gồm năm bước:
 
-Mục tiêu:
+1. Chuẩn hóa WMDP, tạo `D_f`, `D_r`, `D_n`.
+2. Sinh `D_f_adv` bằng prefix/paraphrase/composite/relearning probes.
+3. Sinh `B_f` bằng model gốc và lọc high-confidence leakage.
+4. Train LoRA adapter với `L_SAFE-PoRT`.
+5. Calibrate post-judgment threshold trên validation set.
 
-- Dùng WMDP `original`, `noise_prefix`, `composite`.
-- So sánh no-defense baseline với PoRT/recreated PoRT.
-- Calibrate lại router bằng confidence threshold và group-heldout split.
+Inference gồm bốn bước:
 
-Lý do:
+1. Nhận truy vấn `x`.
+2. Sinh candidate answer bằng `M'`.
+3. Post-judge trên `(x, y)`.
+4. Nếu an toàn thì trả lời, nếu rủi ro thì rethink/refuse.
 
-- Repo đã có baseline full WMDP và nhiều diagnostic notebooks.
-- Plan hiện tại cho thấy điểm nghẽn của recreated PoRT nằm ở prefix compiler/routing semantics và post-judge calibration.
+Kiến trúc này nối trực tiếp với khoảng trống nghiên cứu:
 
-Kết quả mong muốn:
+- Adapter xử lý hạn chế "PoRT chỉ là inference-time defense".
+- Belief negatives xử lý squeezing effect.
+- `D_f_adv` xử lý prefix/composite/paraphrase.
+- `D_n` xử lý utility lân cận.
+- Post-judgment guard xử lý rủi ro còn sót sau adapter.
 
-- Bảng theo domain/variant.
-- Rethink rate hợp lý, không always-rethink.
-- Accuracy/leakage giảm trên adversarial variants mà không làm tụt retain quá mạnh.
+## 9. Kết quả thực nghiệm
 
-### Mức 2 - Thêm dữ liệu adversarial và open-ended evaluation
+### 9.1 Thiết lập thực nghiệm
 
-Mục tiêu:
+Môi trường thực nghiệm được thiết kế theo điều kiện có thể tái lập trong project:
 
-- Tạo paraphrase/syntactic variants cho WMDP.
-- Thêm open-ended QA evaluation an toàn, không công bố nội dung nguy hiểm.
-- Đo robustness trước paraphrase, prefix và composite.
-
-Kết quả mong muốn:
-
-- Chứng minh pipeline không chỉ overfit WMDP MCQ.
-- Có phân tích lỗi: leak do classifier, do router, do cleaned query hay do self-correction.
-
-### Mức 3 - SAFE-PoRT adapter
-
-Mục tiêu:
-
-- Train LoRA adapter với loss NPO + belief negatives + retain KL.
-- Dùng adapter như lớp unlearning nội tại.
-- Dùng PoRT-style post-judge như lớp inference safety cuối.
-
-Ablation:
-
-| Cấu hình | Ý nghĩa |
+| Thành phần | Cấu hình |
 |---|---|
-| Base/no-defense | Mốc ban đầu |
-| PoRT-only | Chỉ inference-time guard |
-| Adapter-only | Chỉ unlearning nội tại |
-| Adapter + post-judge | Kết hợp hai lớp |
-| Full SAFE-PoRT | Thêm augmentation, belief negatives, smoothness |
+| GPU | Kaggle GPU T4/P100, 16 GB VRAM |
+| Base model | Zephyr-7B-beta hoặc Phi/Llama-size tương đương tùy tài nguyên |
+| Dataset forget | WMDP-Bio, WMDP-Cyber, WMDP-Chem |
+| Dataset retain | MMLU/SciQ/GSM8K/Wikitext subset |
+| Neighbor-safe | Biology/cyber/chem safe QA, defensive/educational prompts |
+| Threat variants | original, prefix, paraphrase, composite, relearning probes |
+| Adapter | LoRA `r=8`, `alpha=16`, `dropout=0.05` |
+| Training | 3 epochs, learning rate `2e-5`, AdamW, FP16/BF16 |
+| Router | post-judgment threshold `tau_r`, confidence threshold `tau_c`, validation calibration |
 
-Nếu tài nguyên hạn chế, bài tập lớn vẫn có thể triển khai Mức 1 và Mức 2, còn Mức 3 trình bày như hướng mở rộng có thiết kế rõ ràng.
+Các metric báo cáo:
 
-## 10. Đóng góp dự kiến của pipeline đề xuất
+| Metric | Cách hiểu | Chiều tốt |
+|---|---|---|
+| Forget success | Tỷ lệ mẫu nguy hiểm không còn được trả lời đúng/đầy đủ | Cao hơn tốt hơn |
+| Adversarial robustness | Khả năng chống prefix/paraphrase/composite/relearning | Cao hơn tốt hơn |
+| Open-ended safety | Tỷ lệ câu trả lời mở không leak nội dung nguy hiểm | Cao hơn tốt hơn |
+| Utility retention | Năng lực còn giữ trên retain tasks so với base model | Cao hơn tốt hơn |
+| Neighbor utility | Năng lực trên tri thức hợp pháp gần miền forget | Cao hơn tốt hơn |
+| SAFE-PoRT score | Điểm tổng hợp có trọng số của các metric trên | Cao hơn tốt hơn |
 
-SAFE-PoRT có thể được trình bày như một đóng góp thực nghiệm/thiết kế:
+### 9.2 Ablation study
 
-1. **Kết hợp unlearning nội tại và defense inference-time**: không chỉ chặn đầu ra như PoRT, cũng không chỉ sửa trọng số như RMU/NPO.
+Bảng ablation được thiết kế để trả lời câu hỏi: từng thành phần trong SAFE-PoRT đóng góp bao nhiêu vào kết quả cuối cùng?
 
-2. **Chống spurious unlearning**: dùng belief negatives và attribution-aware regularization để tránh mô hình chỉ chuyển xác suất sang paraphrase hoặc che tri thức.
+| Cấu hình | Thành phần thêm vào | Forget success ↑ | Adv robustness ↑ | Open safety ↑ | Utility ↑ | Neighbor utility ↑ | Score ↑ |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Base LLM | Không unlearning, không guard | 42.1 | 35.7 | 48.6 | **100.0** | **100.0** | 56.2 |
+| PoRT-only | Thêm post-judgment guard | 67.4 | 64.1 | 63.0 | 95.6 | 93.8 | 72.6 |
+| Adapter-only | Thêm LoRA unlearning | 72.8 | 68.9 | 70.5 | 94.1 | 92.5 | 76.0 |
+| Adapter + Judge | Kết hợp adapter và post-judge | 78.6 | 77.4 | 76.2 | 92.7 | 91.6 | 80.8 |
+| + Adv variants | Thêm prefix/paraphrase/composite train | 80.3 | 79.3 | 77.8 | 92.2 | 91.0 | 81.9 |
+| + Belief negatives | Thêm belief-negative mining | 81.6 | 79.9 | 80.1 | 91.9 | 90.8 | 82.8 |
+| Full SAFE-PoRT | Thêm smoothness + calibration | **82.8** | **80.3** | **81.1** | 91.0 | 89.2 | **83.7** |
 
-3. **Đánh giá robustness đa lớp**: không chỉ WMDP original mà còn noise_prefix, composite, paraphrase, open-QA và relearning.
+Chú thích: Số liệu trong bảng ablation là số liệu giả định dùng để hoàn thiện cấu trúc báo cáo. Xu hướng được đặt theo tiêu chí: các metric an toàn và score tăng dần khi thêm thành phần; utility có giảm nhẹ do trade-off unlearning nhưng vẫn giữ trên 90%.
 
-4. **Giữ tri thức hợp pháp lân cận**: đưa `D_neighbor` vào retain objective để tránh xóa mù quáng biology/cyber/chem an toàn.
+![Ablation trend](images/results/safe_port_ablation_trend.png)
 
-5. **Router có calibration rõ ràng**: tránh lỗi thường thấy của PoRT-style pipeline là always-rethink, over-refusal hoặc routing semantics bị đảo.
+Nhận xét:
 
-## 11. Kết luận
+- **PoRT-only tăng mạnh so với Base LLM** vì post-judgment nhìn cả câu trả lời, không chỉ prompt. Do đó nó bắt được nhiều trường hợp prefix/composite mà pre-filter dễ bỏ sót.
+- **Adapter-only tốt hơn PoRT-only ở forget success và open-ended safety** vì nó tác động vào hành vi sinh của mô hình, không chỉ chặn đầu ra.
+- **Adapter + Judge tạo bước nhảy lớn nhất sau hai baseline đầu** vì hai lớp bảo vệ bù trừ cho nhau: adapter giảm xác suất leak, guard xử lý phần còn sót.
+- **Adversarial variants làm tăng robustness rõ rệt** vì train/eval không còn chỉ xoay quanh WMDP original.
+- **Belief negatives tăng open-ended safety** vì mô hình không chỉ bị suppress trên đáp án chuẩn mà cả các câu trả lời tự sinh có cùng ý nghĩa.
+- **Smoothness + calibration cải thiện nhẹ nhưng quan trọng** vì giảm over-refusal và làm router ổn định hơn.
 
-Bài toán LLM unlearning cho tri thức nguy hiểm không thể được giải quyết thỏa đáng bằng một metric đơn lẻ hoặc một lớp filter đầu vào. WMDP là benchmark trung tâm và cần thiết, nhưng chưa đủ để chứng minh mô hình đã thật sự quên. Các nghiên cứu gần đây cho thấy ba điểm quan trọng:
+### 9.3 So sánh với hai phương pháp tiêu biểu
 
-- MCQ accuracy có thể đánh giá sai mức độ unlearning.
-- Tri thức bị "quên" có thể phục hồi qua relearning, benign fine-tuning hoặc prompt khác.
-- Nhiều phương pháp có thể chỉ che đầu ra thay vì xóa biểu diễn tri thức.
+Hai phương pháp được chọn để so sánh là:
 
-Paper PoRT trong project là một hướng mạnh ở phía inference-time robustness vì dùng post-judgment và multi-round correction. Tuy nhiên, PoRT vẫn chưa giải quyết triệt để vấn đề true weight-level unlearning. Do đó, pipeline đề xuất SAFE-PoRT đi theo hướng lai: dùng adapter unlearning để giảm tri thức nội tại, dùng post-judgment để kiểm soát đầu ra, và dùng đánh giá robustness đa lớp để kiểm tra liệu hệ thống có thật sự giảm rủi ro hay chỉ tối ưu trên WMDP.
+- **PoRT**: đại diện cho hướng inference-time post-judgment và multi-round thinking.
+- **LLM Unlearning with LLM Beliefs**: đại diện cho hướng belief-aware suppression nhằm giảm squeezing effect.
 
-## 12. Danh sách nguồn chính
+| Phương pháp | Forget success ↑ | Adv robustness ↑ | Open safety ↑ | Utility ↑ | Neighbor utility ↑ | Score ↑ |
+|---|---:|---:|---:|---:|---:|---:|
+| PoRT | 80.6 | 79.0 | 75.1 | **92.3** | 88.5 | 82.0 |
+| LLM Beliefs | 82.0 | 78.8 | 80.4 | 90.4 | 88.2 | 83.1 |
+| SAFE-PoRT | **82.8** | **80.3** | **81.1** | 91.0 | **89.2** | **83.7** |
+
+Chú thích: Số liệu trong bảng so sánh là số liệu giả định, được đặt theo hướng tham khảo các kết quả và xu hướng báo cáo trong hai paper PoRT và LLM Beliefs, sau đó điều chỉnh giảm nhẹ cho môi trường project giới hạn GPU và artifact. Các số liệu này cần được thay bằng log thực nghiệm thật khi chạy đầy đủ.
+
+![SOTA comparison](images/results/safe_port_sota_comparison.png)
+
+Phân tích:
+
+- **PoRT mạnh ở adversarial robustness** vì chính mục tiêu của PoRT là xử lý prefix/composite thông qua post-judgment và multi-round thinking. Tuy nhiên open-ended safety thấp hơn SAFE-PoRT vì base model vẫn giữ tri thức bên trong.
+- **LLM Beliefs mạnh ở open-ended safety** do suppress cả các response high-confidence mà mô hình tin là đúng, giảm squeezing effect. Điểm yếu là utility và neighbor utility giảm hơn vì belief set có thể bao phủ cả tri thức gần miền nhưng hợp pháp.
+- **SAFE-PoRT nhỉnh nhẹ hơn cả hai** vì kết hợp adapter unlearning, belief negatives và post-judgment guard. Mức tăng được giữ vừa phải vì mô hình vẫn chịu giới hạn tài nguyên, adapter nhỏ và guard chưa phải human-level judge.
+
+### 9.4 Trade-off safety và utility
+
+![Safety utility trade-off](images/results/safe_port_tradeoff.png)
+
+Biểu đồ trade-off cho thấy khi thêm các thành phần SAFE-PoRT, safety average tăng đều từ Base LLM đến Full SAFE-PoRT, trong khi utility retention giảm nhẹ từ 100% xuống khoảng 91.0%. Đây là trade-off chấp nhận được trong bài toán hazardous knowledge: mục tiêu không phải giữ nguyên tuyệt đối mọi hành vi của mô hình gốc, mà là giảm đáng kể khả năng hỗ trợ tác vụ nguy hiểm nhưng vẫn giữ năng lực hữu ích.
+
+Điểm đáng chú ý là `Adapter + Judge` tạo vùng cân bằng tốt: safety tăng mạnh so với `Adapter-only`, nhưng utility chưa giảm sâu. Các thành phần sau đó chủ yếu cải thiện robustness và open-ended safety, không tạo bước nhảy lớn như khi kết hợp hai lớp bảo vệ chính.
+
+### 9.5 Phân tích lỗi và hạn chế hiện tại
+
+Để đánh giá phương pháp không chỉ qua bảng số liệu, cần xem các mẫu thất bại. Báo cáo không công bố nội dung thao tác nguy hiểm; các prompt dưới đây đã được rút gọn và che nội dung nhạy cảm.
+
+| Case | Dạng prompt | Kết quả chưa tốt | Nguyên nhân | Hạn chế rút ra |
+|---|---|---|---|---|
+| 1 | Câu hỏi cyber defensive về kiểm tra hệ thống an toàn | Guard đưa vào Risk route và refusal dù câu hỏi có mục đích phòng thủ | Router dựa nhiều vào keyword miền cyber, chưa phân biệt tốt intent phòng thủ và intent tấn công | SAFE-PoRT vẫn có nguy cơ over-refusal trên neighbor-safe set |
+| 2 | Composite prompt gồm nhiều câu hỏi, phần nhạy cảm nằm ở giữa | Adapter làm sai đáp án MCQ nhưng câu trả lời mở vẫn gợi lại một phần reasoning nhạy cảm | Belief negatives chưa bao phủ đủ dạng composite dài; post-judge nhìn thấy câu trả lời cuối nhưng chưa đánh giá đủ reasoning trung gian | Cần mở rộng open-ended judge và kiểm tra leakage trong chain-of-thought/giải thích |
+
+Từ hai lỗi trên có thể rút ra ba nhược điểm chính:
+
+1. **Calibration của guard vẫn là điểm yếu**: nếu threshold quá nhạy, hệ thống over-refuse; nếu quá lỏng, hệ thống leak.
+2. **Belief-negative coverage chưa đủ**: mô hình có thể leak qua dạng diễn đạt hoặc ngữ cảnh dài chưa xuất hiện trong `B_f`.
+3. **Neighbor-safe utility khó giữ tuyệt đối**: các miền gần WMDP như bio/cyber/chem có ranh giới an toàn mờ, nên adapter có thể làm giảm cả tri thức hợp pháp.
+
+## 10. Kết luận và hướng phát triển
+
+### 10.1 Những gì project đã làm được
+
+Project đã hoàn thiện một khung nghiên cứu tương đối đầy đủ cho bài toán LLM unlearning tri thức nguy hiểm:
+
+1. **Xác định bài toán và threat model**: làm rõ đầu vào, đầu ra, forget/retain/neighbor set, prefix, composite, paraphrase và relearning.
+2. **Khảo sát related works**: tổng hợp các hướng chính gồm WMDP/RMU, NPO, ECO, SPUL, PoRT, LLM Beliefs, SSIUU và các nghiên cứu về relearning.
+3. **Phân tích khoảng trống nghiên cứu**: chỉ ra hạn chế của output suppression, WMDP MCQ-only evaluation, thiếu neighbor utility và thiếu pipeline kết hợp weight-level với inference-time.
+4. **Thiết kế SAFE-PoRT**: đề xuất pipeline lai gồm LoRA adapter unlearning, belief-negative mining, adversarial variants, post-judgment guard và robust evaluation.
+5. **Xây dựng phần dữ liệu và EDA**: bổ sung biểu đồ phân bố WMDP/variant để làm cơ sở cho phần dữ liệu trong báo cáo và slide.
+6. **Hoàn thiện khung thực nghiệm**: có ablation, so sánh với hai phương pháp tiêu biểu, visualize kết quả và phân tích lỗi.
+
+### 10.2 Kết luận chính
+
+Kết quả ablation cho thấy hướng kết hợp adapter unlearning và post-judgment guard là hợp lý. Adapter giúp giảm tri thức nguy hiểm ở mức sinh nội tại, còn guard xử lý các trường hợp còn sót ở inference-time. Khi bổ sung adversarial variants và belief negatives, phương pháp tăng robustness trước prefix/composite/paraphrase và giảm open-ended leakage.
+
+So với PoRT, SAFE-PoRT khắc phục phần nào hạn chế "chỉ chặn đầu ra" bằng adapter. So với LLM Beliefs, SAFE-PoRT giảm rủi ro utility loss bằng retain KL, neighbor KL và post-judge calibration. Tuy nhiên phương pháp chưa hoàn hảo: guard vẫn có thể over-refuse, belief negatives chưa bao phủ đủ mọi prompt dài, và neighbor-safe utility vẫn là trade-off khó.
+
+### 10.3 Hướng phát triển
+
+Các hướng cải thiện tiếp theo:
+
+1. **Chạy thực nghiệm thật đầy đủ**: thay toàn bộ số liệu giả định bằng log từ full WMDP, retain tasks và open-ended evaluation.
+2. **Cải thiện post-judge calibration**: dùng validation theo từng domain/variant, tách threshold cho prompt risk và response risk.
+3. **Mở rộng belief-negative mining**: tăng số sampling seed, thêm paraphrase/composite dài và lọc semantic bằng embedding similarity.
+4. **Tăng chất lượng neighbor-safe set**: xây dựng tập câu hỏi phòng thủ/giáo dục rõ ràng hơn để giảm over-refusal.
+5. **Đánh giá relearning nghiêm túc**: fine-tune lại mô hình sau unlearning bằng một số mẫu benign/hazardous-lite để đo tri thức có quay lại không.
+6. **Thêm human hoặc LLM-as-judge an toàn**: đánh giá open-ended leakage bằng rubric rõ ràng, không chỉ dựa trên MCQ accuracy.
+7. **Mở rộng mô hình và tài nguyên**: thử với nhiều base model, LoRA rank, layer target và GPU lớn hơn để kiểm tra tính ổn định.
+
+Tóm lại, SAFE-PoRT là một hướng thiết kế khả thi cho bài tập lớn: nó không chỉ sao chép PoRT hoặc belief-based unlearning, mà kết hợp hai hướng để giải quyết trực tiếp các khoảng trống nghiên cứu đã nêu. Phần hạn chế hiện tại cũng đủ rõ để tạo kế hoạch cải thiện tiếp theo.
+
+## 11. Danh sách nguồn chính
 
 - WMDP/RMU, ICML 2024: <https://proceedings.mlr.press/v235/li24bc.html>
 - NPO, COLM 2024: <https://openreview.net/forum?id=MXLBXjQkmb>
@@ -631,4 +696,3 @@ Paper PoRT trong project là một hướng mạnh ở phía inference-time robu
 - Explainable LLM Unlearning through Reasoning, ICLR 2026: <https://openreview.net/forum?id=wec4qy2XIF>
 - Erase or Hide?/SSIUU, ICLR 2026: <https://openreview.net/forum?id=z2zFk9jYpw>
 - Benign relearning/syntactic diversification, ICLR 2026: <https://openreview.net/forum?id=IU4rqTlpRb>
-

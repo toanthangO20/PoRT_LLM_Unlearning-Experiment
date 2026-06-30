@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+runs/
+artifacts/
+adapter/
+eval/
+
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+

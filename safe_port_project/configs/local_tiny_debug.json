@@ -1,0 +1,65 @@
+{
+  "project_root": "..",
+  "output_dir": "runs/safe_port_debug",
+  "seed": 42,
+  "model": {
+    "base_model_name_or_path": "sshleifer/tiny-gpt2",
+    "adapter_path": "runs/safe_port_debug/adapter",
+    "torch_dtype": "float32",
+    "device_map": "auto",
+    "max_new_tokens": 24,
+    "temperature": 0.7,
+    "top_p": 0.9
+  },
+  "data": {
+    "wmdp_root": "../dataset/WMDP",
+    "domains": ["bio"],
+    "variants": ["original"],
+    "max_samples_per_domain_variant": 8,
+    "retain_path": "examples/retain_safe_toy.jsonl",
+    "neighbor_path": "examples/neighbor_safe_toy.jsonl",
+    "output_jsonl": "artifacts/data/safe_port_records.jsonl"
+  },
+  "augmentation": {
+    "enabled": true,
+    "prefix": true,
+    "paraphrase": true,
+    "composite": true,
+    "relearning": true
+  },
+  "belief_mining": {
+    "enabled": true,
+    "num_return_sequences": 2,
+    "confidence_threshold": 0.35,
+    "output_jsonl": "artifacts/beliefs/belief_negatives.jsonl"
+  },
+  "training": {
+    "enabled": true,
+    "max_steps": 10,
+    "num_train_epochs": 1,
+    "learning_rate": 0.00002,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 1,
+    "max_length": 512,
+    "lora_r": 4,
+    "lora_alpha": 8,
+    "lora_dropout": 0.05,
+    "target_modules": ["c_attn"],
+    "npo_beta": 0.1,
+    "forget_margin": 3.0,
+    "forget_weight": 1.0,
+    "retain_weight": 0.25,
+    "neighbor_weight": 0.35,
+    "output_dir": "adapter"
+  },
+  "router": {
+    "risk_threshold": 0.55,
+    "confidence_threshold": 0.55,
+    "max_rethink_rounds": 1
+  },
+  "evaluation": {
+    "max_samples": 8,
+    "output_dir": "eval"
+  }
+}
+

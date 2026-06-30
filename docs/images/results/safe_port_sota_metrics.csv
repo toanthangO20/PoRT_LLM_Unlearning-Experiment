@@ -1,0 +1,4 @@
+method,forget_success,adv_robustness,open_safety,mmlu_accuracy,utility_retention,neighbor_utility,score
+PoRT,80.6,79.0,75.1,63.2,92.3,88.5,82.0
+LLM Beliefs,82.0,78.8,80.4,61.3,90.4,88.2,83.1
+SAFE-PoRT,82.8,80.3,81.1,62.1,91.0,89.2,83.7

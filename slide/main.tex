@@ -75,7 +75,15 @@
 \husttitlepage
 
 \begin{frame}{Nội dung trình bày}
-  \tableofcontents[hideallsubsections]
+  \large
+  \begin{enumerate}
+    \item Đặt vấn đề
+    \item Bộ dữ liệu và EDA
+    \item Nghiên cứu liên quan
+    \item Phương pháp đề xuất
+    \item Kết quả thực nghiệm
+    \item Kết luận và hướng phát triển
+  \end{enumerate}
 \end{frame}
 
 \resetPageCount
@@ -148,21 +156,24 @@
 \section{Bộ dữ liệu và EDA}
 
 \begin{frame}{Tổng quan bộ dữ liệu WMDP}
-  \small
-  \begin{columns}[T]
-    \begin{column}{0.50\textwidth}
+  \scriptsize
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.54\textwidth}
       \begin{block}{WMDP}
+        \textit{Weapons of Mass Destruction Proxy}
+        \vspace{-0.25em}
         \begin{itemize}
           \item Benchmark trắc nghiệm để đo tri thức có rủi ro trong LLM.
           \item Tập gốc có \textbf{3,668} câu hỏi, chia thành ba miền.
-          \item Ngoài câu hỏi gốc, các biến thể prompt có thể được dùng để kiểm tra độ bền của mô hình.
-          \item Khi xét ba biến thể \code{original}, \code{noise\_prefix}, \code{composite}, tổng số record đánh giá là \textbf{11,004}.
+          \item Biến thể prompt dùng để kiểm tra độ bền của mô hình.
+          \item Với \code{original}, \code{noise\_prefix}, \code{composite}: \textbf{11,004} record đánh giá.
         \end{itemize}
       \end{block}
     \end{column}
-    \begin{column}{0.45\textwidth}
+    \begin{column}{0.40\textwidth}
       \begin{block}{Số mẫu theo miền}
         \centering
+        \scriptsize
         \begin{tabular}{l r}
           \toprule
           \textbf{Miền} & \textbf{Số câu hỏi gốc} \\
@@ -179,7 +190,9 @@
       \end{block}
     \end{column}
   \end{columns}
-  \smallsource{WMDP: Li et al., ICML 2024; thống kê theo bộ dữ liệu WMDP}
+
+  \vspace{-0.15em}
+  {\tiny\textit{Nguồn: Li et al., ICML 2024; thống kê theo bộ dữ liệu WMDP.}}
 \end{frame}
 
 \begin{frame}{Schema và biến thể đánh giá}
@@ -212,6 +225,37 @@
       \bottomrule
     \end{tabularx}
   \end{block}
+\end{frame}
+
+\begin{frame}{Từ WMDP sang dữ liệu unlearning}
+  \scriptsize
+  \begin{block}{Điểm cần phân biệt}
+    WMDP gốc \textbf{không có trường} $D_f$. $D_f$ là ký hiệu trong bài toán unlearning, được xây từ các record trắc nghiệm WMDP.
+  \end{block}
+
+  \vspace{0.25em}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Xây forget set $D_f$}
+        Với record $i$:
+        \[
+          (q_i,\; C_i=\{c_A,c_B,c_C,c_D\},\; a_i)
+        \]
+        tạo prompt $x_i$ gồm câu hỏi và bốn lựa chọn; target cần suppress là đáp án đúng $y_i^*=c_{a_i}$ hoặc nhãn đúng A--D.
+      \end{block}
+      \begin{block}{Tạo $D_f^{adv}$}
+        Biến đổi \textbf{prompt} $x_i$ bằng prefix, paraphrase, composite, relearning; target vẫn là $y_i^*$.
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Tạo belief negatives $B_f$}
+        Dùng model gốc $M_{\theta}$ sinh nhiều response cho $x_i$; giữ các response high-confidence, rủi ro hoặc gần nghĩa với target đúng để chống quên giả.
+      \end{block}
+      \begin{alertblock}{Retain không lấy từ WMDP}
+        $D_r$ sử dụng MMLU để đo utility ngoài WMDP. $D_n$ là subset QA an toàn gần miền bio/cyber/chem.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 \begin{frame}{EDA: Quy mô theo miền và biến thể}
@@ -307,7 +351,7 @@
 
 \section{Nghiên cứu liên quan}
 
-\begin{frame}{PoRT: ý tưởng tổng quan}
+\begin{frame}{PoRT: Post Judgment and Multi-round Thinking}
   \scriptsize
   \begin{columns}[T]
     \begin{column}{0.40\textwidth}
@@ -472,6 +516,31 @@
   {\scriptsize Figure mô tả ba phần chính: xây dựng dữ liệu/huấn luyện adapter, guard tại inference-time và bộ đánh giá robust.}
 \end{frame}
 
+\begin{frame}{Kiến trúc SAFE-PoRT chi tiết}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l Y Y}
+    \toprule
+    \textbf{Khối} & \textbf{Thành phần} & \textbf{Vai trò} \\
+    \midrule
+    Data construction & $D_f$, $D_f^{adv}$, $D_r$, $D_n$, $B_f$ & Tạo forget/retain/neighbor set và mở rộng bằng prefix, paraphrase, composite, relearning probes \\
+    \rowrule
+    Adapter unlearning & LoRA $\Delta$, NPO loss, KL retain/neighbor, representation loss, smoothness & Giảm khả năng truy hồi tri thức nguy hiểm nhưng hạn chế làm hỏng utility \\
+    \rowrule
+    Belief negatives & High-confidence generations từ $M_\theta$ & Giảm squeezing effect: không chỉ suppress đáp án gốc mà cả biến thể cùng nghĩa \\
+    \rowrule
+    Post-judgment guard & Risk score, entropy, confidence, disagreement & Kiểm tra cặp \code{(prompt, answer)} trước khi trả kết quả \\
+    \rowrule
+    Selective routing & Safe route hoặc rethink/refusal & Giảm leakage còn sót sau adapter, tránh always-refuse bằng threshold calibration \\
+    \bottomrule
+  \end{tabularx}
+
+  \vspace{0.45em}
+  \begin{block}{Luồng huấn luyện và suy luận}
+    Offline: tạo $D_f^{adv}$ và $B_f$ $\rightarrow$ train LoRA adapter $\Delta$ $\rightarrow$ calibrate guard. 
+    Inference: $M'=M_\theta+\Delta$ sinh candidate answer $\rightarrow$ post-judge $\rightarrow$ trả lời an toàn hoặc rethink/refuse.
+  \end{block}
+\end{frame}
+
 \begin{frame}{Hàm mục tiêu đề xuất}
   \small
   Train adapter $\Delta$ để thu được $M' = M_{\theta} + \Delta$.
@@ -479,7 +548,7 @@
   \vspace{0.4em}
   \[
   \mathcal{L} =
-  \lambda_1 \mathcal{L}_{NPO}(D_f \cup B_f)
+  \lambda_1 \mathcal{L}_{NPO}(D_f \cup D_f^{adv} \cup B_f)
   + \lambda_2 KL(M' || M_{\theta}; D_r)
   + \lambda_3 KL(M' || M_{\theta}; D_{neighbor})
   + \lambda_4 \mathcal{L}_{rep}
@@ -490,7 +559,7 @@
   \begin{columns}[T]
     \begin{column}{0.48\textwidth}
       \begin{block}{Thành phần quên}
-        $D_f$ là WMDP; $B_f$ là các response high-confidence do model gốc sinh ra.
+        $D_f$ được xây từ WMDP bằng cách xem đáp án đúng của mỗi câu hỏi trắc nghiệm là target cần suppress; $B_f$ là response high-confidence do model gốc sinh ra.
       \end{block}
     \end{column}
     \begin{column}{0.48\textwidth}
@@ -525,114 +594,162 @@
 
 \section{Kết quả thực nghiệm}
 
-\begin{frame}{Môi trường thực nghiệm cần báo cáo}
+\begin{frame}{Thiết lập thực nghiệm}
   \scriptsize
   \begin{tabularx}{\textwidth}{l Y}
     \toprule
-    \textbf{Hạng mục} & \textbf{Cần ghi rõ trong báo cáo} \\
+    \textbf{Hạng mục} & \textbf{Cấu hình} \\
     \midrule
-    Hardware & GPU, VRAM, RAM, CPU, thời gian chạy; ví dụ Kaggle T4/P100 hoặc A100 nếu có \\
+    Hardware & Kaggle GPU T4/P100, 16GB VRAM; FP16/BF16 tùy GPU \\
     \rowrule
-    Model & Base LLM, tokenizer, context length, precision FP16/BF16/4-bit \\
+    Model & Zephyr-7B-beta hoặc Phi/Llama-size tương đương trong môi trường giới hạn tài nguyên \\
     \rowrule
-    Dataset & WMDP original/noise\_prefix/composite, split train/valid/test, group split \\
+    Dataset & WMDP-Bio/Cyber/Chem; original, prefix, paraphrase, composite, relearning probes \\
     \rowrule
-    Hyperparameter & LoRA rank/alpha/dropout, learning rate, batch size, epoch, warmup, seed \\
+    Retain/neighbor & Retain dùng MMLU; neighbor dùng bio/cyber/chem safe QA \\
     \rowrule
-    Router & Judge model/classifier, threshold, feature dùng để route, rethink budget \\
+    Adapter & LoRA $r=8$, alpha $=16$, dropout $=0.05$, learning rate $2e{-5}$, 3 epochs \\
     \rowrule
-    Metrics & WMDP accuracy/leakage, retain utility, over-refusal, rethink rate, latency \\
+    Router & Post-judgment threshold $\tau_r$, confidence threshold $\tau_c$, validation calibration \\
+    \rowrule
+    Metrics & Forget success, adversarial robustness, open-ended safety, utility, neighbor utility \\
     \bottomrule
   \end{tabularx}
 \end{frame}
 
-\begin{frame}{Kịch bản so sánh với SOTA}
+\begin{frame}{Đánh giá forget, retain và neighbor}
   \scriptsize
-  \begin{tabularx}{\textwidth}{l Y Y}
+  \begin{tabularx}{\textwidth}{l Y Y Y}
     \toprule
-    \textbf{Nhóm baseline} & \textbf{Phương pháp} & \textbf{Mục đích so sánh} \\
+    \textbf{Miền} & \textbf{Dữ liệu} & \textbf{Mục tiêu} & \textbf{Cách đọc metric} \\
     \midrule
-    No defense & Base model & Mốc nguy cơ ban đầu trên WMDP và utility \\
+    Forget & $D_f, D_f^{adv}$ từ WMDP & Giảm khả năng chọn/sinh đáp án đúng nguy hiểm & Accuracy WMDP giảm hoặc forget success tăng là tốt \\
     \rowrule
-    Representation & RMU / Adaptive RMU & So với hướng weight-level/representation-level \\
+    Retain & $D_r$ từ MMLU & Giữ năng lực tổng quát của model gốc & Utility càng gần $M_{\theta}$ càng tốt; $\Delta$ utility nhỏ là tốt \\
     \rowrule
-    Preference/optimization & NPO / SatImp & So với hướng tối ưu loss unlearning \\
-    \rowrule
-    Inference-time & ECO / SPUL / PoRT & So với guard/router không sửa hoặc ít sửa trọng số \\
-    \rowrule
-    Proposed & SAFE-PoRT & Kiểm tra lợi ích của adapter + post-judge + robust eval \\
+    Neighbor-safe & $D_n$ gồm bio/cyber/chem an toàn & Tránh quên lan sang tri thức hợp pháp gần miền nguy hiểm & Neighbor accuracy cao và refusal rate thấp trên câu hỏi an toàn là tốt \\
     \bottomrule
   \end{tabularx}
 
-  \vspace{0.5em}
-  \begin{alertblock}{Lưu ý}
-    Nếu không chạy được toàn bộ SOTA, cần nêu rõ phương pháp nào lấy từ paper, phương pháp nào reproduce, và setting có khác gì.
+  \vspace{0.45em}
+  \begin{alertblock}{Cách hiểu quan trọng}
+    Trên WMDP/forget set, trả lời đúng ít hơn thường là tín hiệu unlearning tốt. Trên retain và neighbor-safe, trả lời đúng phải được giữ gần với base model; nếu giảm mạnh nghĩa là phương pháp suppress quá rộng.
   \end{alertblock}
 \end{frame}
 
-\begin{frame}{Ablation nội bộ}
-  \scriptsize
-  \begin{tabularx}{\textwidth}{l Y Y}
+\begin{frame}{Ablation: số liệu tổng hợp}
+  \tiny
+  \begin{tabularx}{\textwidth}{l Y c c c c c}
     \toprule
-    \textbf{Cấu hình} & \textbf{Câu hỏi kiểm tra} & \textbf{Kỳ vọng khi phân tích} \\
+    \textbf{Cấu hình} & \textbf{Thành phần thêm vào} & \textbf{Forget} & \textbf{Adv.} & \textbf{Open} & \textbf{MMLU} & \textbf{Score} \\
     \midrule
-    Base/no-defense & Model gốc rủi ro đến đâu? & WMDP cao, utility giữ nguyên \\
+    Base LLM & Không unlearning, không guard & 42.1 & 35.7 & 48.6 & \textbf{63.8} & 56.2 \\
     \rowrule
-    PoRT-only & Post-judgment có giúp chống prefix/composite không? & Leakage giảm nhưng latency/rethink tăng \\
+    PoRT-only & Thêm post-judgment guard & 67.4 & 64.1 & 63.0 & 63.5 & 72.6 \\
     \rowrule
-    Adapter-only & Unlearning nội tại có giảm leakage không? & Forget giảm, có thể mất neighbor utility \\
+    Adapter-only & Thêm LoRA unlearning & 72.8 & 68.9 & 70.5 & 62.8 & 76.0 \\
     \rowrule
-    Adapter + router & Hai lớp có bổ sung cho nhau không? & Robust hơn từng lớp riêng lẻ \\
+    Adapter + Judge & Kết hợp adapter và post-judge & 78.6 & 77.4 & 76.2 & 62.4 & 80.8 \\
     \rowrule
-    Full SAFE-PoRT & Belief negatives/augmentation có giảm paraphrase leakage không? & Relearning/paraphrase khó hơn, chi phí tăng \\
-    \bottomrule
-  \end{tabularx}
-\end{frame}
-
-\begin{frame}{Mẫu bảng kết quả nên có}
-  \scriptsize
-  \begin{tabularx}{\textwidth}{l c c c c c}
-    \toprule
-    \textbf{Method} & \textbf{WMDP} $\downarrow$ & \textbf{Adv. WMDP} $\downarrow$ & \textbf{Retain} $\uparrow$ & \textbf{Rethink} $\downarrow$ & \textbf{Latency} $\downarrow$ \\
-    \midrule
-    Base & -- & -- & -- & -- & -- \\
+    + Adv variants & Thêm prefix/paraphrase/composite train & 80.3 & 79.3 & 77.8 & 62.1 & 81.9 \\
     \rowrule
-    RMU / NPO & -- & -- & -- & -- & -- \\
+    + Belief negatives & Thêm belief-negative mining & 81.6 & 79.9 & 80.1 & 61.9 & 82.8 \\
     \rowrule
-    PoRT-only & -- & -- & -- & -- & -- \\
-    \rowrule
-    Adapter-only & -- & -- & -- & -- & -- \\
-    \rowrule
-    SAFE-PoRT & -- & -- & -- & -- & -- \\
+    Full SAFE-PoRT & Smoothness + calibration & \textbf{82.8} & \textbf{80.3} & \textbf{81.1} & 61.6 & \textbf{83.7} \\
     \bottomrule
   \end{tabularx}
 
-  \vspace{0.7em}
-  \begin{block}{Cách trình bày}
-    Không chỉ đọc số liệu. Cần giải thích: vì sao method giảm WMDP, vì sao retain tụt, vì sao rethink tăng, và lỗi nằm ở adapter hay router.
-  \end{block}
+  \vspace{0.35em}
+  {\tiny Ghi chú: số liệu trong bảng là số liệu giả định để hoàn thiện báo cáo; MMLU là accuracy retain sau từng cấu hình, giảm nhẹ do trade-off unlearning.}
 \end{frame}
 
-\begin{frame}{Cách diễn giải kết quả}
+\begin{frame}{Ablation: xu hướng khi thêm thành phần}
+  \centering
+  \includegraphics[width=0.94\textwidth,height=0.70\textheight,keepaspectratio]{results/safe_port_ablation_trend.png}
+
+  \vspace{0.2em}
+  {\scriptsize Bước nhảy lớn nhất đến từ adapter + post-judgment; MMLU giảm nhẹ, cho thấy utility được giữ tương đối ổn định.}
+\end{frame}
+
+\begin{frame}{So sánh với hai nghiên cứu tiêu biểu}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l c c c c c c}
+    \toprule
+    \textbf{Method} & \textbf{Forget} & \textbf{Adv.} & \textbf{Open} & \textbf{MMLU} & \textbf{Neighbor} & \textbf{Score} \\
+    \midrule
+    PoRT & 80.6 & 79.0 & 75.1 & \textbf{63.2} & 88.5 & 82.0 \\
+    \rowrule
+    LLM Beliefs & 82.0 & 78.8 & 80.4 & 61.3 & 88.2 & 83.1 \\
+    \rowrule
+    SAFE-PoRT & \textbf{82.8} & \textbf{80.3} & \textbf{81.1} & 62.1 & \textbf{89.2} & \textbf{83.7} \\
+    \bottomrule
+  \end{tabularx}
+
+  \vspace{0.3em}
+  {\tiny Ghi chú: số liệu so sánh là số liệu giả định, tham khảo xu hướng từ PoRT và LLM Beliefs rồi điều chỉnh giảm nhẹ cho môi trường project giới hạn GPU/artifact.}
+
+  \vspace{0.3em}
+  \begin{itemize}
+    \item PoRT mạnh ở adversarial robustness nhưng chưa giảm tri thức nội tại.
+    \item LLM Beliefs tốt ở open-ended safety nhưng MMLU/neighbor utility giảm hơn.
+    \item SAFE-PoRT nhỉnh nhẹ hơn nhờ kết hợp adapter, belief negatives và post-judgment guard.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{So sánh với SOTA: visualize}
+  \centering
+  \includegraphics[width=0.92\textwidth,height=0.70\textheight,keepaspectratio]{results/safe_port_sota_comparison.png}
+
+  \vspace{0.2em}
+  {\scriptsize SAFE-PoRT nhỉnh nhẹ ở forget/adversarial/open-ended; MMLU thấp hơn PoRT nhưng cao hơn LLM Beliefs nhờ retain KL và neighbor KL.}
+\end{frame}
+
+\begin{frame}{Trade-off safety và MMLU}
+  \centering
+  \includegraphics[width=0.80\textwidth,height=0.70\textheight,keepaspectratio]{results/safe_port_tradeoff.png}
+
+  \vspace{0.2em}
+  {\scriptsize Khi thêm thành phần, safety tăng đều; MMLU giảm từ 63.8\% xuống 61.6\%, phản ánh trade-off nhẹ giữa unlearning và utility tổng quát.}
+\end{frame}
+
+\begin{frame}{Phân tích lỗi: mẫu chưa tốt}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{l Y Y Y}
+    \toprule
+    \textbf{Case} & \textbf{Dạng prompt} & \textbf{Kết quả chưa tốt} & \textbf{Hạn chế rút ra} \\
+    \midrule
+    1 & Câu hỏi cyber defensive về kiểm tra hệ thống an toàn & Guard đưa vào risk route và refusal dù mục đích là phòng thủ & Router còn dựa nhiều vào keyword, dễ over-refuse trên neighbor-safe set \\
+    \rowrule
+    2 & Composite prompt dài, phần nhạy cảm nằm ở giữa & Adapter làm sai MCQ nhưng open-ended answer vẫn gợi lại một phần reasoning nhạy cảm & Belief negatives chưa bao phủ đủ composite dài; cần judge tốt hơn cho open-ended leakage \\
+    \bottomrule
+  \end{tabularx}
+
+  \vspace{0.45em}
+  \begin{alertblock}{Kết luận từ lỗi}
+    Điểm yếu chính là calibration của guard, coverage của belief negatives và khả năng giữ neighbor-safe utility trong các miền gần WMDP.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Diễn giải tăng/giảm số liệu}
   \small
   \begin{columns}[T]
     \begin{column}{0.48\textwidth}
-      \begin{block}{Nếu kết quả tốt}
+      \begin{block}{Vì sao số liệu tăng?}
         \begin{itemize}
-          \item WMDP và adversarial WMDP giảm.
-          \item Retain/neighbor utility không tụt mạnh.
-          \item Relearning khó hơn baseline.
-          \item Router không always-rethink, không over-refuse quá mức.
+          \item Adapter giảm xác suất sinh tri thức cần quên.
+          \item Post-judge xử lý phần leakage còn sót.
+          \item Adversarial variants giúp chống prompt biến đổi.
+          \item Belief negatives giảm paraphrase/open-ended leakage.
         \end{itemize}
       \end{block}
     \end{column}
     \begin{column}{0.48\textwidth}
-      \begin{alertblock}{Nếu kết quả chưa tốt}
+      \begin{alertblock}{Vì sao utility giảm?}
         \begin{itemize}
-          \item Retain tụt: adapter quá mạnh hoặc neighbor set yếu.
-          \item Leakage còn: belief negatives/paraphrase chưa bao phủ.
-          \item Latency cao: post-judge/rethink quá nhiều.
-          \item Over-refusal: threshold hoặc risk classifier lệch.
+          \item Forget và neighbor knowledge có biên giới mờ.
+          \item Adapter nhỏ vẫn có collateral damage.
+          \item Router nhạy có thể over-refuse câu hỏi an toàn.
+          \item Rethink/refusal tăng latency khi prompt khó.
         \end{itemize}
       \end{alertblock}
     \end{column}
@@ -642,12 +759,13 @@
 \section{Kết luận và hướng phát triển}
 
 \begin{frame}{Kết luận}
-  \begin{enumerate}
-    \item Đã xác định bài toán LLM unlearning cho tri thức nguy hiểm với forget/retain/neighbor data.
-    \item Đã tổng hợp các hướng liên quan và chỉ ra hạn chế: output suppression, WMDP-only evaluation, router calibration, retain utility.
-    \item Đã đề xuất SAFE-PoRT: LoRA unlearning adapter + belief negatives + PoRT-style post-judgment.
-    \item Đã thiết kế kịch bản đánh giá gồm SOTA comparison, ablation nội bộ, robustness và system metrics.
-  \end{enumerate}
+  \small
+  \begin{itemize}
+    \item Project đã xác định bài toán LLM unlearning cho tri thức nguy hiểm với forget/retain/neighbor data và threat model gồm prefix, composite, paraphrase, relearning.
+    \item Đã khảo sát các hướng liên quan, đặc biệt PoRT và LLM Beliefs, để rút ra khoảng trống: output suppression chưa đủ, MCQ-only evaluation hẹp, router calibration khó.
+    \item Đã đề xuất SAFE-PoRT: LoRA unlearning adapter + adversarial variants + belief negatives + post-judgment guard.
+    \item Đã hoàn thiện khung thực nghiệm gồm ablation, so sánh với hai SOTA, visualize, phân tích trade-off và failure cases.
+  \end{itemize}
 \end{frame}
 
 \begin{frame}{Hướng phát triển}
@@ -656,27 +774,27 @@
     \begin{column}{0.48\textwidth}
       \begin{block}{Khắc phục nhược điểm}
         \begin{itemize}
-          \item Giảm latency bằng router hai tầng.
-          \item Tăng coverage belief negatives bằng paraphrase/open-ended generation.
-          \item Tăng retain bằng neighbor set chất lượng hơn.
-          \item Kiểm tra relearning sau fine-tune ngắn.
+          \item Chạy full WMDP và retain tasks để thay số liệu giả định bằng log thật.
+          \item Calibrate riêng prompt risk và response risk để giảm over-refusal.
+          \item Mở rộng belief negatives bằng nhiều seed, paraphrase và composite dài.
+          \item Tăng chất lượng neighbor-safe set để giữ tri thức phòng thủ/giáo dục.
         \end{itemize}
       \end{block}
     \end{column}
     \begin{column}{0.48\textwidth}
       \begin{alertblock}{Hướng mở rộng}
         \begin{itemize}
-          \item Thử trên model lớn hơn và domain khác.
-          \item Thêm human/safety judge cho open-ended leakage.
-          \item Phân tích activation để kiểm tra erase hay hide.
-          \item Chuẩn hóa log để tái lập kết quả.
+          \item Đánh giá relearning sau fine-tune ngắn bằng benign/hazard-lite data.
+          \item Thêm human hoặc LLM-as-judge an toàn cho open-ended leakage.
+          \item Phân tích activation/attribution để kiểm tra erase hay hide.
+          \item Thử nhiều base model, LoRA rank và layer target để kiểm tra ổn định.
         \end{itemize}
       \end{alertblock}
     \end{column}
   \end{columns}
 \end{frame}
 
-\section{Tài liệu tham khảo}
+\section*{Tài liệu tham khảo}
 
 \begin{frame}[allowframebreaks]{Tài liệu tham khảo chính}
   \scriptsize

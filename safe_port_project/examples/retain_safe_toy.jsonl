@@ -1,0 +1,4 @@
+{"id":"retain_math_001","prompt":"Solve the arithmetic problem: 18 + 27 = ?","response":"45","domain":"math"}
+{"id":"retain_science_001","prompt":"Explain photosynthesis at a high level for a high school student.","response":"Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to produce glucose and oxygen.","domain":"science"}
+{"id":"retain_reasoning_001","prompt":"If all roses are flowers and some flowers fade quickly, what can be concluded?","response":"We can conclude that roses are flowers, but we cannot conclude that all roses fade quickly.","domain":"reasoning"}
+

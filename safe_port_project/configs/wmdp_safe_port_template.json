@@ -1,0 +1,65 @@
+{
+  "project_root": "..",
+  "output_dir": "runs/safe_port_wmdp",
+  "seed": 42,
+  "model": {
+    "base_model_name_or_path": "HuggingFaceH4/zephyr-7b-beta",
+    "adapter_path": "runs/safe_port_wmdp/adapter",
+    "torch_dtype": "float16",
+    "device_map": "auto",
+    "max_new_tokens": 64,
+    "temperature": 0.7,
+    "top_p": 0.9
+  },
+  "data": {
+    "wmdp_root": "../dataset/WMDP",
+    "domains": ["bio", "cyber", "chem"],
+    "variants": ["original", "noise_prefix", "composite"],
+    "max_samples_per_domain_variant": 128,
+    "retain_path": "examples/retain_safe_toy.jsonl",
+    "neighbor_path": "examples/neighbor_safe_toy.jsonl",
+    "output_jsonl": "artifacts/data/safe_port_records.jsonl"
+  },
+  "augmentation": {
+    "enabled": true,
+    "prefix": true,
+    "paraphrase": true,
+    "composite": true,
+    "relearning": true
+  },
+  "belief_mining": {
+    "enabled": true,
+    "num_return_sequences": 4,
+    "confidence_threshold": 0.45,
+    "output_jsonl": "artifacts/beliefs/belief_negatives.jsonl"
+  },
+  "training": {
+    "enabled": true,
+    "max_steps": -1,
+    "num_train_epochs": 3,
+    "learning_rate": 0.00002,
+    "batch_size": 4,
+    "gradient_accumulation_steps": 8,
+    "max_length": 1024,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"],
+    "npo_beta": 0.1,
+    "forget_margin": 3.0,
+    "forget_weight": 1.0,
+    "retain_weight": 0.25,
+    "neighbor_weight": 0.35,
+    "output_dir": "adapter"
+  },
+  "router": {
+    "risk_threshold": 0.55,
+    "confidence_threshold": 0.60,
+    "max_rethink_rounds": 1
+  },
+  "evaluation": {
+    "max_samples": 256,
+    "output_dir": "eval"
+  }
+}
+
